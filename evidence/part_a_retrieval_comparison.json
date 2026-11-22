@@ -1,15 +1,22 @@
 {
   "embedding_model": "intfloat/multilingual-e5-small",
   "top_k": 3,
+  "trade_off_analysis": {
+    "summary": "Trade-off Verified: Overlapping chunking guarantees complete contextual recall (Source Recall=1.000 vs Baseline=0.917) and rich passage preservation for safety/allergy policies. However, overlapping chunks can introduce boundary sentences, slightly reducing raw top-3 source precision (0.778 vs Baseline=0.945). In RAG systems, higher recall and contextual integrity are prioritized."
+  },
   "aggregate_metrics": {
     "baseline": {
-      "mean_precision_at_k": 0.945,
-      "mean_recall_at_k": 0.917,
-      "mean_reciprocal_rank": 1.0
+      "source_mean_precision_at_k": 0.945,
+      "source_mean_recall_at_k": 0.917,
+      "passage_mean_precision_at_k": 0.555,
+      "passage_mean_recall_at_k": 1.0,
+      "mean_reciprocal_rank": 0.75
     },
     "overlapping": {
-      "mean_precision_at_k": 0.778,
-      "mean_recall_at_k": 1.0,
+      "source_mean_precision_at_k": 0.778,
+      "source_mean_recall_at_k": 1.0,
+      "passage_mean_precision_at_k": 0.611,
+      "passage_mean_recall_at_k": 1.0,
       "mean_reciprocal_rank": 1.0
     }
   },
@@ -23,8 +30,10 @@
         ],
         "relevance_criteria": "Must state Saturday (9:00-22:00) and Sunday (9:00-17:00) operating hours.",
         "metrics": {
-          "precision_at_k": 0.667,
-          "recall_at_k": 1.0,
+          "source_precision_at_k": 0.667,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 1.0,
+          "passage_recall_at_k": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -67,9 +76,11 @@
         ],
         "relevance_criteria": "Must specify that dogs are welcome on the outdoor terrace but prohibited inside.",
         "metrics": {
-          "precision_at_k": 1.0,
-          "recall_at_k": 1.0,
-          "reciprocal_rank": 1.0
+          "source_precision_at_k": 1.0,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 0.333,
+          "passage_recall_at_k": 1.0,
+          "reciprocal_rank": 0.5
         },
         "retrieved": [
           {
@@ -112,8 +123,10 @@
         ],
         "relevance_criteria": "Must identify plant-based items like roasted vegetable sandwich or rice porridge without dairy.",
         "metrics": {
-          "precision_at_k": 1.0,
-          "recall_at_k": 0.5,
+          "source_precision_at_k": 1.0,
+          "source_recall_at_k": 0.5,
+          "passage_precision_at_k": 0.333,
+          "passage_recall_at_k": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -156,9 +169,11 @@
         ],
         "relevance_criteria": "Must mention laptop policies, kettle-guest Wi-Fi, or outlet locations (window bench/bookshelf).",
         "metrics": {
-          "precision_at_k": 1.0,
-          "recall_at_k": 1.0,
-          "reciprocal_rank": 1.0
+          "source_precision_at_k": 1.0,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 0.667,
+          "passage_recall_at_k": 1.0,
+          "reciprocal_rank": 0.5
         },
         "retrieved": [
           {
@@ -200,8 +215,10 @@
         ],
         "relevance_criteria": "Must note absence of gluten-free bread and identify porridge/soup as safe alternatives.",
         "metrics": {
-          "precision_at_k": 1.0,
-          "recall_at_k": 1.0,
+          "source_precision_at_k": 1.0,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 0.667,
+          "passage_recall_at_k": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -244,9 +261,11 @@
         ],
         "relevance_criteria": "Must retrieve warm beverage options like Assam milk tea, chamomile, or drinking chocolate.",
         "metrics": {
-          "precision_at_k": 1.0,
-          "recall_at_k": 1.0,
-          "reciprocal_rank": 1.0
+          "source_precision_at_k": 1.0,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 0.333,
+          "passage_recall_at_k": 1.0,
+          "reciprocal_rank": 0.5
         },
         "retrieved": [
           {
@@ -290,8 +309,10 @@
         ],
         "relevance_criteria": "Must state Saturday (9:00-22:00) and Sunday (9:00-17:00) operating hours.",
         "metrics": {
-          "precision_at_k": 0.333,
-          "recall_at_k": 1.0,
+          "source_precision_at_k": 0.333,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 0.333,
+          "passage_recall_at_k": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -334,8 +355,10 @@
         ],
         "relevance_criteria": "Must specify that dogs are welcome on the outdoor terrace but prohibited inside.",
         "metrics": {
-          "precision_at_k": 1.0,
-          "recall_at_k": 1.0,
+          "source_precision_at_k": 1.0,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 0.333,
+          "passage_recall_at_k": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -379,8 +402,10 @@
         ],
         "relevance_criteria": "Must identify plant-based items like roasted vegetable sandwich or rice porridge without dairy.",
         "metrics": {
-          "precision_at_k": 1.0,
-          "recall_at_k": 1.0,
+          "source_precision_at_k": 1.0,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 1.0,
+          "passage_recall_at_k": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -423,8 +448,10 @@
         ],
         "relevance_criteria": "Must mention laptop policies, kettle-guest Wi-Fi, or outlet locations (window bench/bookshelf).",
         "metrics": {
-          "precision_at_k": 1.0,
-          "recall_at_k": 1.0,
+          "source_precision_at_k": 1.0,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 1.0,
+          "passage_recall_at_k": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -467,8 +494,10 @@
         ],
         "relevance_criteria": "Must note absence of gluten-free bread and identify porridge/soup as safe alternatives.",
         "metrics": {
-          "precision_at_k": 0.667,
-          "recall_at_k": 1.0,
+          "source_precision_at_k": 0.667,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 0.333,
+          "passage_recall_at_k": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -511,8 +540,10 @@
         ],
         "relevance_criteria": "Must retrieve warm beverage options like Assam milk tea, chamomile, or drinking chocolate.",
         "metrics": {
-          "precision_at_k": 0.667,
-          "recall_at_k": 1.0,
+          "source_precision_at_k": 0.667,
+          "source_recall_at_k": 1.0,
+          "passage_precision_at_k": 0.667,
+          "passage_recall_at_k": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [

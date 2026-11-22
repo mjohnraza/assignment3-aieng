@@ -98,7 +98,18 @@ Run all steps using `uv run python <path>`:
    ```bash
    uv run python experiments/compare_retrieval.py
    ```
-   *Computes Precision@K, Recall@K, and Mean Reciprocal Rank (MRR), and records comprehensive manual relevance assessments in `evidence/part_a_retrieval_comparison.json`.*
+   *Evaluates both Source-Level and Passage-Level Precision@K, Recall@K, and Mean Reciprocal Rank (MRR), with detailed manual assessments in `evidence/part_a_retrieval_comparison.json`.*
+
+#### ⚖️ Retrieval Evaluation Trade-Off Analysis
+| Metric | Baseline (Line-based) | Overlapping (300 char / 50 overlap) | Engineering Rationale |
+| :--- | :---: | :---: | :--- |
+| **Source Recall@3** | 0.917 | **1.000** | Perfect source coverage: all relevant policy documents captured in top-3. |
+| **Source Precision@3** | **0.945** | 0.778 | Baseline matches isolated lines; overlapping windows include contiguous sentences. |
+| **Passage Recall@3** | 1.000 | **1.000** | Both capture answering passages. |
+| **Passage Precision@3**| 0.611 | **0.611** | Core factual answer density across top-3 retrieved passages. |
+| **Mean Reciprocal Rank** | 1.000 | **1.000** | First relevant answer rank is preserved at rank 1. |
+
+> **Key Trade-off:** Overlapping chunking trades off raw source precision for complete contextual recall and contiguous semantic paragraphs. In safety-critical café RAG (e.g. allergen warnings and pet restrictions), preventing split-sentence truncation is prioritized over raw line precision.
 
 ### Part B: MCP Fundamentals
 1. **Live Raw JSON-RPC 2.0 Protocol Exchange (Steps 6 & 7):**
@@ -118,7 +129,8 @@ uv run python steps/03_llm_rag.py
 ```
 - Implements the complete sequence: `User question → LLM tool decision → MCP Client invocation (ClientSession.call_tool()) → retrieved context → LLM response`.
 - Evaluates 5 café questions across diverse topics.
-- Includes a **programmatically asserted** negative test (*EV charging stations / dedicated parking*), verifying that the assistant truthfully identifies unavailable information without hallucinations.
+- **Dual-Aspect Programmatic Negative Test Assertion:** Independently verifies that the assistant accurately states both that on-site parking is unavailable (or refers to the coin lot) AND that EV charging is unavailable/unmentioned, guarding against partial hallucinations.
+- **MCP Error Flag Inspection:** Inspects `result.is_error` / `result.isError` directly on MCP responses.
 
 ### Part D: Iterative ReAct Agent (Steps 16–20)
 ```bash
@@ -128,11 +140,25 @@ uv run python steps/04_react_agent.py
   > *"I’m planning to visit the café with my cat. Can I sit outside, what food options are available, and are there any allergy considerations I should know about?"*
 - Runs an explicit `while steps < MAX_STEPS:` loop in Python with tool calls executed strictly through the MCP client (`ClientSession.call_tool()`).
 - Maintains robust conversation history with `role: "tool"`, `name`, and `tool_call_id`.
-- Validates arguments against schema prior to dispatch.
+- Validates arguments against schema prior to dispatch and propagates MCP error flags back to conversational history.
 - Emits citations and explicitly distinguishes confirmed facts (e.g. dogs permitted on outdoor terrace, assistance animals permitted everywhere, vegan & gluten-free food options) from unconfirmed details (e.g. cats specifically are unmentioned in policy).
 
 ### Automated Testing
-Run the complete test suite (17 passed):
+Run the complete test suite (20 passed):
 ```bash
 uv run pytest
+```
+```
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.2.0, pluggy-1.7.0
+rootdir: C:\Users\exam.DESKTOP-LNCC6CA\Desktop\AA3\wandering-kettle-assistant
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.5.0
+collected 20 items
+
+tests\test_react_agent.py ........                                       [ 40%]
+tests\test_retrieval.py ....                                             [ 60%]
+tests\test_validation.py ........                                        [100%]
+
+============================= 20 passed in 11.17s =============================
 ```

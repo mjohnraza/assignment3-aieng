@@ -250,11 +250,13 @@ class ReActAgent:
                         print(f" -> Invoking MCP Server tool '{tool_name}' via ClientSession.call_tool()...")
                         try:
                             mcp_result = await client.call_tool(tool_name, clean_args)
+                            is_tool_error = getattr(mcp_result, "is_error", False)
+                            content_str = str(mcp_result)
                             observation = ToolObservation(
                                 tool_name=tool_name,
-                                status="success",
-                                result=mcp_result,
-                                is_error=False,
+                                status="error" if is_tool_error else "success",
+                                result=content_str,
+                                is_error=is_tool_error,
                                 call_id=call_id,
                             )
                         except Exception as exc:

@@ -195,3 +195,41 @@ async def test_react_agent_validation_error_feedback():
     assert result["iterations"] == 3
     # First call failed validation, so MCP call_tool was only invoked once on the corrected arguments
     assert mock_mcp.call_tool.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_react_agent_mcp_is_error_flag_propagation():
+    """Test that when MCP tool call returns is_error=True, agent records observation.is_error=True and status='error'."""
+    from wandering_kettle_assistant.mcp_client import MCPToolCallResponse
+
+    mock_mcp = AsyncMock()
+    mock_mcp.call_tool.return_value = MCPToolCallResponse(
+        content="Error: Database index is unavailable.",
+        is_error=True,
+    )
+
+    agent = ReActAgent(max_steps=2, mcp_client=mock_mcp)
+
+    step1_call = {
+        "message": {
+            "content": "Checking policy...",
+            "tool_calls": [
+                {
+                    "id": "call_err_01",
+                    "function": {"name": "lookup_cafe_policy", "arguments": {"topic": "pet_policy"}},
+                }
+            ],
+        }
+    }
+    step2_final = {
+        "message": {
+            "content": "Final answer: Service temporarily unavailable.",
+            "tool_calls": None,
+        }
+    }
+
+    with patch("ollama.chat", side_effect=[step1_call, step2_final]):
+        result = await agent.arun("Test query for error propagation", mcp_client=mock_mcp)
+
+    assert result["status"] == "completed"
+    assert result["trace"][0]["observation_status"] == "error"

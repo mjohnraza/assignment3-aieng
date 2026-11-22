@@ -1,5 +1,9 @@
 """ChromaDB knowledge retrieval service for Wandering Kettle café."""
 
+import os
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import chromadb
@@ -77,6 +81,8 @@ def search_knowledge_base(query: str, top_k: int = 5) -> str:
         variants.append("wireless internet power outlets laptop work")
     elif "vegan" in clean_query.lower() or "plant" in clean_query.lower():
         variants.append("plant based animal products dairy milk")
+    elif "parking" in clean_query.lower() or "car" in clean_query.lower() or "ev" in clean_query.lower() or "vehicle" in clean_query.lower():
+        variants.append("parking bicycles car park directions location access")
 
     citations: List[Citation] = retrieve_with_citations(
         query_variants=variants,

@@ -2,9 +2,11 @@
 
 Connects to the FastMCP server over Stdio transport and executes tool calls
 via the standard MCP SDK ClientSession.call_tool() protocol.
+Explicitly inspects and propagates MCP tool error status (is_error).
 """
 
 import asyncio
+from dataclasses import dataclass
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,6 +16,16 @@ from mcp.client.stdio import stdio_client
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SERVER_SCRIPT = PROJECT_ROOT / "server.py"
+
+
+@dataclass
+class MCPToolCallResponse:
+    """Structured response from an MCP tool call capturing content and error flag."""
+    content: str
+    is_error: bool = False
+
+    def __str__(self) -> str:
+        return self.content
 
 
 class MCPClientManager:
@@ -51,15 +63,19 @@ class MCPClientManager:
         res = await self.session.list_tools()
         return res.tools
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> MCPToolCallResponse:
         """
         Execute an MCP tool via tools/call across the stdio transport.
-        Returns the formatted string content received from the MCP server.
+        Explicitly checks result.is_error / result.isError to detect server-side
+        tool execution failures without relying solely on Python exceptions.
         """
         if not self.session:
             await self.connect()
 
         result = await self.session.call_tool(name, arguments=arguments)
+
+        # Inspect standard MCP error flags
+        is_error = getattr(result, "is_error", getattr(result, "isError", False))
 
         output_parts: List[str] = []
         for content_item in result.content:
@@ -68,7 +84,8 @@ class MCPClientManager:
             else:
                 output_parts.append(str(content_item))
 
-        return "\n".join(output_parts)
+        full_content = "\n".join(output_parts)
+        return MCPToolCallResponse(content=full_content, is_error=bool(is_error))
 
     async def close(self) -> None:
         """Safely tear down the MCP session and stdio process."""
@@ -94,6 +111,6 @@ class MCPClientManager:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    def call_tool_sync(self, name: str, arguments: Dict[str, Any]) -> str:
+    def call_tool_sync(self, name: str, arguments: Dict[str, Any]) -> MCPToolCallResponse:
         """Synchronous wrapper to execute an MCP tool call."""
         return asyncio.run(self.call_tool(name, arguments))
