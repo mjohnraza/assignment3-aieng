@@ -14,7 +14,11 @@ import ollama
 
 from wandering_kettle_assistant.llm_client import get_available_model
 from wandering_kettle_assistant.mcp_client import MCPClientManager
-from wandering_kettle_assistant.validation import validate_tool_arguments, RejectionResult
+from wandering_kettle_assistant.validation import (
+    validate_tool_arguments,
+    verify_negative_response,
+    RejectionResult,
+)
 
 # Tool schemas exposed to the LLM (matching FastMCP tools)
 TOOLS_SCHEMA = [
@@ -201,76 +205,6 @@ async def answer_question_with_rag(
         "question": question,
         "tool_trace": tool_trace,
         "final_answer": answer,
-    }
-
-
-def verify_negative_response(response_text: str) -> Dict[str, Any]:
-    """
-    Rigorously and independently verifies both facets of the unanswerable query:
-    1. Parking: Confirms the response explicitly notes that on-site/private parking is
-       unavailable or refers to the off-site coin lot.
-    2. EV Charging: Confirms the response explicitly identifies that electric vehicle
-       charging is not available, not mentioned, or unverified in café documentation.
-    Both must pass independently to prevent partial hallucinations.
-    """
-    lower = response_text.lower()
-
-    # Dimension 1: Parking status check
-    parking_unavailable_signals = [
-        "no car park",
-        "no private parking",
-        "no customer parking",
-        "does not have dedicated customer parking",
-        "does not have dedicated parking",
-        "no dedicated customer parking",
-        "no dedicated parking",
-        "does not have parking",
-        "parking is not available",
-        "coin lot behind the post office",
-        "closest option",
-    ]
-    parking_confirmed_unavailable = any(sig in lower for sig in parking_unavailable_signals)
-    parking_false_assertion = (
-        "dedicated customer parking is available" in lower
-        or "free on-site customer parking" in lower
-        or "private car park on site" in lower
-    )
-    parking_pass = parking_confirmed_unavailable and not parking_false_assertion
-
-    # Dimension 2: EV charging status check
-    ev_unavailable_signals = [
-        "no ev charging",
-        "no electric vehicle",
-        "not have electric vehicle",
-        "ev charging is not",
-        "electric vehicle (ev) charging stations on site",
-        "charging stations on site",
-        "does not offer ev",
-        "does not have ev",
-        "not mentioned",
-        "unavailable",
-        "does not provide electric vehicle",
-        "no charging stations",
-    ]
-    ev_confirmed_unavailable = any(sig in lower for sig in ev_unavailable_signals)
-    ev_false_assertion = (
-        "ev charging stations are available" in lower
-        or "offers electric vehicle charging on site" in lower
-    )
-    ev_pass = ev_confirmed_unavailable and not ev_false_assertion
-
-    overall_safe = parking_pass and ev_pass
-
-    return {
-        "is_safe": overall_safe,
-        "parking_pass": parking_pass,
-        "ev_pass": ev_pass,
-        "details": {
-            "parking_signal_found": parking_confirmed_unavailable,
-            "parking_false_assertion": parking_false_assertion,
-            "ev_signal_found": ev_confirmed_unavailable,
-            "ev_false_assertion": ev_false_assertion,
-        },
     }
 
 

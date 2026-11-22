@@ -36,7 +36,10 @@ TEST_QUERIES = [
         "query": "What are the cafe opening hours on Saturday and Sunday?",
         "expected_sources": ["hours_access.txt"],
         "relevance_criteria": "Must state Saturday (9:00-22:00) and Sunday (9:00-17:00) operating hours.",
-        "passage_evaluator": lambda text: any(kw in text.lower() for kw in ["saturday", "sunday", "9:00 to 22:00", "9:00 to 17:00"]),
+        "passage_evaluator": lambda text: (
+            ("saturday" in text.lower() or "sunday" in text.lower())
+            and ("9:00" in text.lower() or "22:00" in text.lower() or "17:00" in text.lower() or "open" in text.lower())
+        ),
     },
     {
         "id": 2,
@@ -44,7 +47,11 @@ TEST_QUERIES = [
         "query": "Can I bring my dog and sit outside on the terrace?",
         "expected_sources": ["faq.txt"],
         "relevance_criteria": "Must specify that dogs are welcome on the outdoor terrace but prohibited inside.",
-        "passage_evaluator": lambda text: any(kw in text.lower() for kw in ["terrace", "dogs are welcome", "animals"]),
+        "passage_evaluator": lambda text: (
+            ("dog" in text.lower() or "animal" in text.lower())
+            and "terrace" in text.lower()
+            and ("welcome" in text.lower() or "stairs" in text.lower() or "water bowl" in text.lower())
+        ),
     },
     {
         "id": 3,
@@ -52,7 +59,10 @@ TEST_QUERIES = [
         "query": "Which food options are suitable for someone following a fully plant-based diet?",
         "expected_sources": ["allergens.txt", "menu_food.txt"],
         "relevance_criteria": "Must identify plant-based items like roasted vegetable sandwich or rice porridge without dairy.",
-        "passage_evaluator": lambda text: any(kw in text.lower() for kw in ["plant based", "roasted vegetable", "rice porridge", "without animal products"]),
+        "passage_evaluator": lambda text: (
+            ("plant based" in text.lower() or "without animal products" in text.lower() or "roasted vegetable" in text.lower())
+            and ("sandwich" in text.lower() or "porridge" in text.lower() or "hummus" in text.lower() or "soup" in text.lower())
+        ),
     },
     {
         "id": 4,
@@ -60,7 +70,10 @@ TEST_QUERIES = [
         "query": "Can I work on my laptop, and where can I find Wi-Fi and power sockets?",
         "expected_sources": ["faq.txt"],
         "relevance_criteria": "Must mention laptop policies, kettle-guest Wi-Fi, or outlet locations (window bench/bookshelf).",
-        "passage_evaluator": lambda text: any(kw in text.lower() for kw in ["kettle-guest", "sockets", "power outlets", "stay and work", "laptops away"]),
+        "passage_evaluator": lambda text: (
+            ("laptop" in text.lower() or "stay and work" in text.lower() or "kettle-guest" in text.lower() or "socket" in text.lower())
+            and ("wifi" in text.lower() or "wireless" in text.lower() or "outlet" in text.lower() or "bench" in text.lower() or "work" in text.lower())
+        ),
     },
     {
         "id": 5,
@@ -68,7 +81,10 @@ TEST_QUERIES = [
         "query": "Which menu items are suitable for someone avoiding wheat or gluten?",
         "expected_sources": ["allergens.txt"],
         "relevance_criteria": "Must note absence of gluten-free bread and identify porridge/soup as safe alternatives.",
-        "passage_evaluator": lambda text: any(kw in text.lower() for kw in ["gluten", "without wheat", "rice porridge", "gluten free bread"]),
+        "passage_evaluator": lambda text: (
+            ("gluten" in text.lower() or "without wheat" in text.lower())
+            and ("bread" in text.lower() or "porridge" in text.lower() or "soup" in text.lower())
+        ),
     },
     {
         "id": 6,
@@ -76,7 +92,10 @@ TEST_QUERIES = [
         "query": "I want something warm to drink because it is freezing outside.",
         "expected_sources": ["menu_drinks.txt"],
         "relevance_criteria": "Must retrieve warm beverage options like Assam milk tea, chamomile, or drinking chocolate.",
-        "passage_evaluator": lambda text: any(kw in text.lower() for kw in ["drinking chocolate", "steamed milk", "assam", "chamomile", "steaming", "tea and other"]),
+        "passage_evaluator": lambda text: (
+            ("drinking chocolate" in text.lower() or "assam" in text.lower() or "chamomile" in text.lower() or "steamed milk" in text.lower())
+            and ("tea" in text.lower() or "chocolate" in text.lower() or "cup" in text.lower() or "drink" in text.lower())
+        ),
     },
 ]
 
@@ -187,7 +206,15 @@ def calculate_metrics(
     # Passage-level metrics (actual factual answer presence in text)
     passage_hits = [item for item in results if passage_evaluator(item["text"])]
     passage_precision = len(passage_hits) / k
-    passage_recall = 1.0 if len(passage_hits) > 0 else 0.0
+    # Passage recall: fraction of expected sources that have at least one relevant passage
+    sources_with_relevant_passage = set(
+        item["source"] for item in passage_hits if item["source"] in expected_sources
+    )
+    passage_recall = (
+        len(sources_with_relevant_passage) / len(set(expected_sources))
+        if expected_sources
+        else (1.0 if passage_hits else 0.0)
+    )
 
     # Reciprocal rank based on first factually relevant passage
     reciprocal_rank = 0.0

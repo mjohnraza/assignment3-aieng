@@ -51,17 +51,28 @@ def get_chroma_collection():
     return _collection_instance
 
 
+class RetrievalError(Exception):
+    """Raised when the retrieval backend (ChromaDB, embedding model) encounters an error."""
+    pass
+
+
 def search_knowledge_base(query: str, top_k: int = 5) -> str:
     """
     Search the Wandering Kettle café knowledge base.
 
     Returns:
         Formatted string containing retrieved passages and source metadata with citations.
+
+    Raises:
+        RetrievalError: If the ChromaDB collection cannot be accessed or the
+            embedding model fails. This propagates through MCP as an isError=True
+            response so callers (including the ReAct agent) can distinguish
+            infrastructure failures from empty-result-set outcomes.
     """
     validation = validate_search_args({"query": query, "top_k": top_k})
     if isinstance(validation, RejectionResult):
         error_msgs = "; ".join(err.message for err in validation.errors)
-        return f"Argument validation failed: {error_msgs}"
+        raise RetrievalError(f"Argument validation failed: {error_msgs}")
 
     clean_query = validation.query
     sanitized_top_k = validation.top_k
@@ -69,7 +80,7 @@ def search_knowledge_base(query: str, top_k: int = 5) -> str:
     try:
         collection = get_chroma_collection()
     except Exception as exc:
-        return f"Knowledge base connection error: {exc}"
+        raise RetrievalError(f"Knowledge base connection error: {exc}") from exc
 
     # Use multi-query variant expansion for robust matching
     variants = [clean_query]

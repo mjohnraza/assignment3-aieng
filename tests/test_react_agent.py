@@ -233,3 +233,54 @@ async def test_react_agent_mcp_is_error_flag_propagation():
 
     assert result["status"] == "completed"
     assert result["trace"][0]["observation_status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_react_agent_duplicate_call_safeguard():
+    """Test that identical (tool, arguments) repeated across steps are skipped."""
+    mock_mcp = AsyncMock()
+    mock_mcp.call_tool.return_value = "Retrieved hours data."
+
+    agent = ReActAgent(max_steps=3, mcp_client=mock_mcp)
+
+    # Step 1: calls lookup_cafe_policy with hours
+    step1_call = {
+        "message": {
+            "content": "Checking hours...",
+            "tool_calls": [
+                {
+                    "id": "call_dup_01",
+                    "function": {"name": "lookup_cafe_policy", "arguments": {"topic": "hours"}},
+                }
+            ],
+        }
+    }
+
+    # Step 2: repeats the exact same call
+    step2_call = {
+        "message": {
+            "content": "Checking hours again...",
+            "tool_calls": [
+                {
+                    "id": "call_dup_02",
+                    "function": {"name": "lookup_cafe_policy", "arguments": {"topic": "hours"}},
+                }
+            ],
+        }
+    }
+
+    # Step 3: final answer
+    step3_final = {
+        "message": {
+            "content": "Final answer: Hours are 8:00 to 18:00.",
+            "tool_calls": None,
+        }
+    }
+
+    with patch("ollama.chat", side_effect=[step1_call, step2_call, step3_final]):
+        result = await agent.arun("When are you open?", mcp_client=mock_mcp)
+
+    assert result["status"] == "completed"
+    # The duplicate call in step 2 should NOT have hit MCP call_tool a second time
+    assert mock_mcp.call_tool.call_count == 1
+    assert any(t.get("observation_status") == "duplicate_skipped" for t in result["trace"])

@@ -132,6 +132,8 @@ class ReActAgent:
         self.max_steps = max_steps
         self.available_tools = available_tools or AVAILABLE_TOOL_NAMES
         self.mcp_client = mcp_client
+        # Duplicate-call detection: tracks (tool_name, frozen_args) already executed
+        self._executed_calls: set = set()
 
     async def arun(
         self,
@@ -148,6 +150,7 @@ class ReActAgent:
             created_client = True
 
         try:
+            self._executed_calls = set()  # Reset per-run
             steps = 0
             messages: List[Dict[str, Any]] = [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -206,12 +209,36 @@ class ReActAgent:
                             arguments = json.loads(raw_args)
                         except Exception:
                             arguments = {"query": raw_args}
+                    elif not isinstance(raw_args, dict):
+                        # Guard against malformed arguments (None, list, int, etc.)
+                        arguments = {"query": str(raw_args)} if raw_args is not None else {}
                     else:
                         arguments = raw_args
 
                     # Normalize alias names if needed
                     if tool_name == "search_cafe_knowledge_base":
                         tool_name = "search"
+
+                    # Duplicate-call detection: skip identical (tool, args) pairs
+                    call_fingerprint = (tool_name, json.dumps(arguments, sort_keys=True))
+                    if call_fingerprint in self._executed_calls:
+                        print(f" -> [Duplicate Detection]: Identical call to '{tool_name}' with same arguments already executed. Skipping.")
+                        messages.append({
+                            "role": "tool",
+                            "name": tool_name,
+                            "tool_call_id": call_id if isinstance(call_id, str) else f"call_{steps}_{call_idx:02d}",
+                            "content": f"Duplicate call skipped: '{tool_name}' was already invoked with these arguments. Use the previous observation.",
+                        })
+                        trace.append({
+                            "step": steps,
+                            "call_id": call_id,
+                            "thought": thought_text,
+                            "action": tool_name,
+                            "arguments": arguments,
+                            "observation_status": "duplicate_skipped",
+                            "observation_preview": "Duplicate call skipped.",
+                        })
+                        continue
 
                     decision = ToolCallDecision(
                         tool_name=tool_name,
@@ -283,6 +310,9 @@ class ReActAgent:
                         "tool_call_id": call_id,
                         "content": str(observation.result),
                     })
+
+                    # Record this call in the duplicate-detection set
+                    self._executed_calls.add(call_fingerprint)
 
                     trace.append({
                         "step": steps,

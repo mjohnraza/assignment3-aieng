@@ -63,8 +63,8 @@ def retrieve_with_citations(
                 n_results=min(top_k, max(1, collection.count())),
                 include=["documents", "metadatas", "distances"],
             )
-        except Exception:
-            continue
+        except Exception as exc:
+            raise RuntimeError(f"ChromaDB collection query failed: {exc}") from exc
 
         if not results or not results.get("ids") or not results["ids"][0]:
             continue

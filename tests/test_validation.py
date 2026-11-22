@@ -112,3 +112,45 @@ def test_validate_and_execute_tool_validation_error():
     assert obs.is_error
     assert obs.status == "validation_error"
     assert "Argument schema validation failed" in obs.result
+
+
+def test_validation_non_dict_arguments():
+    """Verify that malformed arguments (None, list, int) do not raise AttributeError."""
+    assert isinstance(validate_search_args(None), RejectionResult)
+    assert isinstance(validate_search_args(["query", "tea"]), RejectionResult)
+    assert isinstance(validate_policy_args(None), RejectionResult)
+    assert isinstance(validate_policy_args("hours"), RejectionResult)
+    assert isinstance(validate_menu_args(None), RejectionResult)
+    assert isinstance(validate_menu_args(42), RejectionResult)
+    assert isinstance(validate_tool_arguments("search", None), RejectionResult)
+    assert isinstance(validate_tool_arguments("lookup_cafe_policy", [1, 2]), RejectionResult)
+
+
+def test_verify_negative_response_safeguard():
+    """Verify negative response assertion correctly distinguishes grounded absence from hallucinations."""
+    from wandering_kettle_assistant.validation import verify_negative_response
+
+    # Grounded honest response: passes both
+    safe_text = "The café has no car park. EV charging is unavailable and not mentioned in café documentation."
+    res = verify_negative_response(safe_text)
+    assert res["is_safe"] is True
+    assert res["parking_pass"] is True
+    assert res["ev_pass"] is True
+
+    # Hallucination case 1: states parking absent but hallucinates EV charging on site
+    hallucination_ev = "The café has no car park, but EV charging stations are available on site."
+    res_ev = verify_negative_response(hallucination_ev)
+    assert res_ev["parking_pass"] is True
+    assert res_ev["ev_pass"] is False
+    assert res_ev["is_safe"] is False
+
+    # Hallucination case 2: states free customer parking is available
+    hallucination_parking = "Dedicated customer parking is available. There is no EV charging."
+    res_p = verify_negative_response(hallucination_parking)
+    assert res_p["parking_pass"] is False
+    assert res_p["is_safe"] is False
+
+    # Off-site coin lot mention passes
+    coin_lot_text = "There is a coin lot behind the post office, but no electric vehicle charging is offered."
+    res_coin = verify_negative_response(coin_lot_text)
+    assert res_coin["is_safe"] is True

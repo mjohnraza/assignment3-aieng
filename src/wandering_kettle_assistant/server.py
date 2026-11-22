@@ -8,6 +8,7 @@ except ImportError:
     from mcp.server.fastmcp import FastMCP
 
 from wandering_kettle_assistant.retrieval import (
+    RetrievalError,
     search_knowledge_base,
     lookup_policy,
     search_menu as get_menu_info,
@@ -32,6 +33,10 @@ def search(query: str, top_k: int = 5) -> str:
 
     Returns:
         Formatted string containing retrieved passages and source metadata.
+
+    Raises:
+        RetrievalError: Propagated as MCP isError=True when the vector store
+            or embedding model is unreachable.
     """
     return search_knowledge_base(query=query, top_k=top_k)
 
@@ -45,6 +50,9 @@ def lookup_cafe_policy(topic: str) -> str:
 
     Returns:
         Documented café policy guidelines and constraints.
+
+    Raises:
+        RetrievalError: Propagated as MCP isError=True on backend failure.
     """
     return lookup_policy(topic=topic)
 
@@ -59,6 +67,9 @@ def search_menu(category: str = "food", include_allergens: bool = True) -> str:
 
     Returns:
         Available items matching the category and allergen considerations.
+
+    Raises:
+        RetrievalError: Propagated as MCP isError=True on backend failure.
     """
     return get_menu_info(category=category, include_allergens=include_allergens)
 

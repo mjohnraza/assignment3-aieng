@@ -105,11 +105,11 @@ Run all steps using `uv run python <path>`:
 | :--- | :---: | :---: | :--- |
 | **Source Recall@3** | 0.917 | **1.000** | Perfect source coverage: all relevant policy documents captured in top-3. |
 | **Source Precision@3** | **0.945** | 0.778 | Baseline matches isolated lines; overlapping windows include contiguous sentences. |
-| **Passage Recall@3** | 1.000 | **1.000** | Both capture answering passages. |
-| **Passage Precision@3**| 0.611 | **0.611** | Core factual answer density across top-3 retrieved passages. |
-| **Mean Reciprocal Rank** | 1.000 | **1.000** | First relevant answer rank is preserved at rank 1. |
+| **Passage Recall@3** | 0.750 | **1.000** | Overlapping chunks guarantee all necessary information sources have answering passages. |
+| **Passage Precision@3**| 0.389 | **0.611** | Overlapping chunks provide higher factual answer density (+57% improvement). |
+| **Mean Reciprocal Rank** | 0.667 | **1.000** | First relevant answer rank is preserved at rank 1 across all queries. |
 
-> **Key Trade-off:** Overlapping chunking trades off raw source precision for complete contextual recall and contiguous semantic paragraphs. In safety-critical café RAG (e.g. allergen warnings and pet restrictions), preventing split-sentence truncation is prioritized over raw line precision.
+> **Key Trade-off:** Overlapping chunking trades off raw source precision for complete contextual recall and contiguous semantic paragraphs. In safety-critical café RAG (e.g. allergen warnings and pet restrictions), preventing split-sentence truncation is prioritized over raw line precision. Evidence is serialized in `evidence/part_a_retrieval_comparison.json`.
 
 ### Part B: MCP Fundamentals
 1. **Live Raw JSON-RPC 2.0 Protocol Exchange (Steps 6 & 7):**
@@ -140,11 +140,14 @@ uv run python steps/04_react_agent.py
   > *"I’m planning to visit the café with my cat. Can I sit outside, what food options are available, and are there any allergy considerations I should know about?"*
 - Runs an explicit `while steps < MAX_STEPS:` loop in Python with tool calls executed strictly through the MCP client (`ClientSession.call_tool()`).
 - Maintains robust conversation history with `role: "tool"`, `name`, and `tool_call_id`.
+- **Duplicate-Call Safeguard:** Tracks executed `(tool, argument)` fingerprints across iterations and skips redundant identical calls.
+- **Defensive Schema Validation:** Robustly handles malformed non-dictionary inputs (`None`, `list`, primitives) across all validation functions.
+- **End-to-End Error Propagation:** Raises `RetrievalError` on vector search/ChromaDB exceptions, captured by FastMCP as `isError=True` and flagged in `ToolObservation.is_error`.
 - Validates arguments against schema prior to dispatch and propagates MCP error flags back to conversational history.
 - Emits citations and explicitly distinguishes confirmed facts (e.g. dogs permitted on outdoor terrace, assistance animals permitted everywhere, vegan & gluten-free food options) from unconfirmed details (e.g. cats specifically are unmentioned in policy).
 
 ### Automated Testing
-Run the complete test suite (20 passed):
+Run the complete test suite (23 passed):
 ```bash
 uv run pytest
 ```
@@ -154,11 +157,11 @@ platform win32 -- Python 3.12.10, pytest-9.2.0, pluggy-1.7.0
 rootdir: C:\Users\exam.DESKTOP-LNCC6CA\Desktop\AA3\wandering-kettle-assistant
 configfile: pyproject.toml
 plugins: anyio-4.16.0, asyncio-1.5.0
-collected 20 items
+collected 23 items
 
-tests\test_react_agent.py ........                                       [ 40%]
-tests\test_retrieval.py ....                                             [ 60%]
-tests\test_validation.py ........                                        [100%]
+tests\test_react_agent.py .........                                      [ 39%]
+tests\test_retrieval.py ....                                             [ 56%]
+tests\test_validation.py ..........                                      [100%]
 
-============================= 20 passed in 11.17s =============================
+============================= 23 passed in 11.26s =============================
 ```
