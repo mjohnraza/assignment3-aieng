@@ -1,0 +1,468 @@
+{
+  "embedding_model": "intfloat/multilingual-e5-small",
+  "top_k": 3,
+  "experiments": {
+    "baseline": {
+      "1": {
+        "topic": "Opening hours",
+        "query": "What are the cafe opening hours on Saturday and Sunday?",
+        "expected_sources": [
+          "hours_access.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "hours_access.txt_chunk_8",
+            "source": "hours_access.txt",
+            "chunk_index": 8,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.17764770984649658,
+            "text": "Sunday: 9:00 to 17:00"
+          },
+          {
+            "id": "hours_access.txt_chunk_7",
+            "source": "hours_access.txt",
+            "chunk_index": 7,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.17853385210037231,
+            "text": "Saturday: 9:00 to 22:00"
+          },
+          {
+            "id": "faq.txt_chunk_3",
+            "source": "faq.txt",
+            "chunk_index": 3,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.1870635747909546,
+            "text": "to move to a smaller table if the room fills up. On Friday and Saturday after"
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      },
+      "2": {
+        "topic": "Outdoor seating and pets",
+        "query": "Can I bring my dog and sit outside on the terrace?",
+        "expected_sources": [
+          "faq.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "faq.txt_chunk_25",
+            "source": "faq.txt",
+            "chunk_index": 25,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.16246724128723145,
+            "text": "Very welcome. We have two high chairs and a box of wooden blocks under the"
+          },
+          {
+            "id": "faq.txt_chunk_21",
+            "source": "faq.txt",
+            "chunk_index": 21,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.1646275520324707,
+            "text": "Dogs are welcome on the small terrace at the top of the stairs, but not"
+          },
+          {
+            "id": "faq.txt_chunk_14",
+            "source": "faq.txt",
+            "chunk_index": 14,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.1703122854232788,
+            "text": "Not for one or two people. For groups of five or more, send a message the day"
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      },
+      "3": {
+        "topic": "Plant-based food",
+        "query": "Which food options are suitable for someone following a fully plant-based diet?",
+        "expected_sources": [
+          "allergens.txt",
+          "menu_food.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "allergens.txt_chunk_20",
+            "source": "allergens.txt",
+            "chunk_index": 20,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.15678060054779053,
+            "text": "Fully plant based at the moment: the roasted vegetable and hummus sandwich,"
+          },
+          {
+            "id": "allergens.txt_chunk_0",
+            "source": "allergens.txt",
+            "chunk_index": 0,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.18897408246994019,
+            "text": "The Wandering Kettle - Ingredients and Dietary Notes"
+          },
+          {
+            "id": "allergens.txt_chunk_22",
+            "source": "allergens.txt",
+            "chunk_index": 22,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.19486570358276367,
+            "text": "yuzu soda. Most days the soup is as well, but not always."
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      },
+      "4": {
+        "topic": "Working environment",
+        "query": "Can I work on my laptop, and where can I find Wi-Fi and power sockets?",
+        "expected_sources": [
+          "faq.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "faq.txt_chunk_6",
+            "source": "faq.txt",
+            "chunk_index": 6,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.14705288410186768,
+            "text": "IS THERE WIRELESS INTERNET?"
+          },
+          {
+            "id": "faq.txt_chunk_7",
+            "source": "faq.txt",
+            "chunk_index": 7,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.1550208330154419,
+            "text": "Yes. The network is called kettle-guest and the password is printed on the"
+          },
+          {
+            "id": "faq.txt_chunk_1",
+            "source": "faq.txt",
+            "chunk_index": 1,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.16556447744369507,
+            "text": "CAN I STAY AND WORK?"
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      },
+      "5": {
+        "topic": "Food allergies",
+        "query": "Which menu items are suitable for someone avoiding wheat or gluten?",
+        "expected_sources": [
+          "allergens.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "allergens.txt_chunk_11",
+            "source": "allergens.txt",
+            "chunk_index": 11,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.16153818368911743,
+            "text": "We have no gluten free bread. The rice porridge and the soup of the day are"
+          },
+          {
+            "id": "allergens.txt_chunk_10",
+            "source": "allergens.txt",
+            "chunk_index": 10,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.173961341381073,
+            "text": "WITHOUT WHEAT"
+          },
+          {
+            "id": "allergens.txt_chunk_0",
+            "source": "allergens.txt",
+            "chunk_index": 0,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.18338030576705933,
+            "text": "The Wandering Kettle - Ingredients and Dietary Notes"
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      },
+      "6": {
+        "topic": "Semantic search example",
+        "query": "I want something warm to drink because it is freezing outside.",
+        "expected_sources": [
+          "menu_drinks.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "menu_drinks.txt_chunk_10",
+            "source": "menu_drinks.txt",
+            "chunk_index": 10,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.15406519174575806,
+            "text": "its temperature for a good twenty minutes. Ask for it over ice and we will"
+          },
+          {
+            "id": "menu_drinks.txt_chunk_9",
+            "source": "menu_drinks.txt",
+            "chunk_index": 9,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.1605067253112793,
+            "text": "taste it. Espresso drinks arrive steaming in a heavy ceramic cup that keeps"
+          },
+          {
+            "id": "menu_drinks.txt_chunk_17",
+            "source": "menu_drinks.txt",
+            "chunk_index": 17,
+            "start_offset": null,
+            "end_offset": null,
+            "distance": 0.16724979877471924,
+            "text": "beans with a heavier body; in summer we pour something brighter from Ethiopia."
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      }
+    },
+    "overlapping": {
+      "1": {
+        "topic": "Opening hours",
+        "query": "What are the cafe opening hours on Saturday and Sunday?",
+        "expected_sources": [
+          "hours_access.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "hours_access.txt_chunk_0",
+            "source": "hours_access.txt",
+            "chunk_index": 0,
+            "start_offset": 0,
+            "end_offset": 300,
+            "distance": 0.1744433045387268,
+            "text": "The Wandering Kettle - Hours and Directions\n\nWHEN WE ARE OPEN\n\nMonday: 8:00 to 18:00\nTuesday: 8:00 to 18:00\nWednesday: closed\nThursday: 8:00 to 20:00\nFriday: 8:00 to 22:00\nSaturday: 9:00 to 22:00\nSunday: 9:00 to 17:00\n\nWe are closed every Wednesday because that is when the roasting happens and\nthe w"
+          },
+          {
+            "id": "menu_food.txt_chunk_1",
+            "source": "menu_food.txt",
+            "chunk_index": 1,
+            "start_offset": 250,
+            "end_offset": 550,
+            "distance": 0.20093095302581787,
+            "text": "l slate by the register. On\nMondays it is almost always root vegetable. The kitchen stops taking plate\norders thirty minutes before closing, so arrive earlier if you are hungry.\n\nSANDWICHES\n\nHam and comte on baguette - $5.80\nRoasted vegetable and hummus - $5.60\nEgg salad on milk bread - $4.90\nTuna a"
+          },
+          {
+            "id": "menu_drinks.txt_chunk_2",
+            "source": "menu_drinks.txt",
+            "chunk_index": 2,
+            "start_offset": 500,
+            "end_offset": 800,
+            "distance": 0.20704936981201172,
+            "text": "EWED COFFEE\n\nPour-over, single origin, rotates weekly - $4.40\nCold brew, steeped eighteen hours - $4.00\nRefill of the day's brewed coffee - $1.00\n\nThe single origin changes every Monday. In winter we lean toward Guatemalan\nbeans with a heavier body; in summer we pour something brighter from Ethiopia"
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      },
+      "2": {
+        "topic": "Outdoor seating and pets",
+        "query": "Can I bring my dog and sit outside on the terrace?",
+        "expected_sources": [
+          "faq.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "faq.txt_chunk_4",
+            "source": "faq.txt",
+            "chunk_index": 4,
+            "start_offset": 1000,
+            "end_offset": 1300,
+            "distance": 0.14766180515289307,
+            "text": "d for\ncard payment and we do not add a service charge.\n\nANIMALS\n\nDogs are welcome on the small terrace at the top of the stairs, but not\ninside the room itself. There is a water bowl by the terrace door. Assistance\nanimals are welcome anywhere.\n\nCHILDREN\n\nVery welcome. We have two high chairs and a "
+          },
+          {
+            "id": "faq.txt_chunk_5",
+            "source": "faq.txt",
+            "chunk_index": 5,
+            "start_offset": 1250,
+            "end_offset": 1550,
+            "distance": 0.19470298290252686,
+            "text": "DREN\n\nVery welcome. We have two high chairs and a box of wooden blocks under the\nbook shelf. We do not have a changing table.\n\nTAKEAWAY\n\nEverything on the drink menu can go in a paper cup. Bring your own container\nand we take 50 cents off. We stopped offering plastic lids in 2023.\n\nLOST PROPERTY\n\nAn"
+          },
+          {
+            "id": "faq.txt_chunk_0",
+            "source": "faq.txt",
+            "chunk_index": 0,
+            "start_offset": 0,
+            "end_offset": 300,
+            "distance": 0.1974736452102661,
+            "text": "The Wandering Kettle - Questions We Get Asked\n\nCAN I STAY AND WORK?\n\nYes, on most days. We ask for one order every ninety minutes, and we ask you\nto move to a smaller table if the room fills up. On Friday and Saturday after\nsix in the evening we put the laptops away and the room becomes a place for\n"
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      },
+      "3": {
+        "topic": "Plant-based food",
+        "query": "Which food options are suitable for someone following a fully plant-based diet?",
+        "expected_sources": [
+          "allergens.txt",
+          "menu_food.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "allergens.txt_chunk_4",
+            "source": "allergens.txt",
+            "chunk_index": 4,
+            "start_offset": 1000,
+            "end_offset": 1300,
+            "distance": 0.17617613077163696,
+            "text": "We do not use peanuts anywhere in the kitchen.\n\nWITHOUT ANIMAL PRODUCTS\n\nFully plant based at the moment: the roasted vegetable and hummus sandwich,\nthe mushroom toast if we leave off the butter, the rice porridge, and the\nyuzu soda. Most days the soup is as well, but not always.\n\nEGGS\n\nEgg salad an"
+          },
+          {
+            "id": "allergens.txt_chunk_1",
+            "source": "allergens.txt",
+            "chunk_index": 1,
+            "start_offset": 250,
+            "end_offset": 550,
+            "distance": 0.1878224015235901,
+            "text": "able at no extra charge, and every\nespresso drink can be made with either. The thick drinking chocolate is made\nwith dairy and cannot be changed, because the recipe depends on it.\n\nThe banana bread and the lemon poppy seed cake both contain butter. The\nroasted vegetable sandwich and the rice porridg"
+          },
+          {
+            "id": "menu_food.txt_chunk_1",
+            "source": "menu_food.txt",
+            "chunk_index": 1,
+            "start_offset": 250,
+            "end_offset": 550,
+            "distance": 0.19937509298324585,
+            "text": "l slate by the register. On\nMondays it is almost always root vegetable. The kitchen stops taking plate\norders thirty minutes before closing, so arrive earlier if you are hungry.\n\nSANDWICHES\n\nHam and comte on baguette - $5.80\nRoasted vegetable and hummus - $5.60\nEgg salad on milk bread - $4.90\nTuna a"
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      },
+      "4": {
+        "topic": "Working environment",
+        "query": "Can I work on my laptop, and where can I find Wi-Fi and power sockets?",
+        "expected_sources": [
+          "faq.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "faq.txt_chunk_1",
+            "source": "faq.txt",
+            "chunk_index": 1,
+            "start_offset": 250,
+            "end_offset": 550,
+            "distance": 0.12746727466583252,
+            "text": "the laptops away and the room becomes a place for\nconversation instead.\n\nIS THERE WIRELESS INTERNET?\n\nYes. The network is called kettle-guest and the password is printed on the\nback of the paper coaster under your cup. It changes every month.\n\nPOWER OUTLETS\n\nThere are six sockets along the window be"
+          },
+          {
+            "id": "faq.txt_chunk_0",
+            "source": "faq.txt",
+            "chunk_index": 0,
+            "start_offset": 0,
+            "end_offset": 300,
+            "distance": 0.1757735013961792,
+            "text": "The Wandering Kettle - Questions We Get Asked\n\nCAN I STAY AND WORK?\n\nYes, on most days. We ask for one order every ninety minutes, and we ask you\nto move to a smaller table if the room fills up. On Friday and Saturday after\nsix in the evening we put the laptops away and the room becomes a place for\n"
+          },
+          {
+            "id": "faq.txt_chunk_2",
+            "source": "faq.txt",
+            "chunk_index": 2,
+            "start_offset": 500,
+            "end_offset": 800,
+            "distance": 0.19235146045684814,
+            "text": "OUTLETS\n\nThere are six sockets along the window bench and two more beside the shelf of\nsecondhand books. The four small tables in the middle of the room have none,\nwhich is deliberate.\n\nDO YOU TAKE RESERVATIONS?\n\nNot for one or two people. For groups of five or more, send a message the day\nbefore an"
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      },
+      "5": {
+        "topic": "Food allergies",
+        "query": "Which menu items are suitable for someone avoiding wheat or gluten?",
+        "expected_sources": [
+          "allergens.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "allergens.txt_chunk_2",
+            "source": "allergens.txt",
+            "chunk_index": 2,
+            "start_offset": 500,
+            "end_offset": 800,
+            "distance": 0.13665062189102173,
+            "text": "he\nroasted vegetable sandwich and the rice porridge contain no dairy at all.\n\nWITHOUT WHEAT\n\nWe have no gluten free bread. The rice porridge and the soup of the day are\nusually safe, but the soup sometimes uses a stock that contains barley, so ask\non the day. Pastries all contain wheat.\n\nNUTS\n\nAlmon"
+          },
+          {
+            "id": "menu_food.txt_chunk_1",
+            "source": "menu_food.txt",
+            "chunk_index": 1,
+            "start_offset": 250,
+            "end_offset": 550,
+            "distance": 0.18682795763015747,
+            "text": "l slate by the register. On\nMondays it is almost always root vegetable. The kitchen stops taking plate\norders thirty minutes before closing, so arrive earlier if you are hungry.\n\nSANDWICHES\n\nHam and comte on baguette - $5.80\nRoasted vegetable and hummus - $5.60\nEgg salad on milk bread - $4.90\nTuna a"
+          },
+          {
+            "id": "allergens.txt_chunk_3",
+            "source": "allergens.txt",
+            "chunk_index": 3,
+            "start_offset": 750,
+            "end_offset": 1050,
+            "distance": 0.18817204236984253,
+            "text": " the day. Pastries all contain wheat.\n\nNUTS\n\nAlmond croissants are made with almond paste and are handled on the same\nsurface as the other pastries. If a nut allergy is severe, we cannot promise\nthat any item from the pastry case is free of traces.\n\nWe do not use peanuts anywhere in the kitchen.\n\nWI"
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      },
+      "6": {
+        "topic": "Semantic search example",
+        "query": "I want something warm to drink because it is freezing outside.",
+        "expected_sources": [
+          "menu_drinks.txt"
+        ],
+        "retrieved": [
+          {
+            "id": "menu_drinks.txt_chunk_4",
+            "source": "menu_drinks.txt",
+            "chunk_index": 4,
+            "start_offset": 1000,
+            "end_offset": 1300,
+            "distance": 0.17314386367797852,
+            "text": " - $3.50\nThick drinking chocolate - $4.80\nYuzu soda - $3.90\n\nThe drinking chocolate is our most requested item once the temperature drops\nbelow ten degrees. It is closer to melted chocolate than to cocoa, and we\nserve it in a small cup because most people cannot finish a large one.\n\nChamomile and ge"
+          },
+          {
+            "id": "staff_handbook.txt_chunk_3",
+            "source": "staff_handbook.txt",
+            "chunk_index": 3,
+            "start_offset": 750,
+            "end_offset": 1050,
+            "distance": 0.17839837074279785,
+            "text": "he drip tray, run the\ngrinder empty, wipe the steam wands, take the cash to the safe upstairs, and\nput the milk that will not survive until tomorrow into the staff fridge.\n\nTurn the water heater off at the wall. It has been left on twice and it is\nexpensive.\n\nSHIFTS\n\nTwo people on the floor at all t"
+          },
+          {
+            "id": "menu_drinks.txt_chunk_3",
+            "source": "menu_drinks.txt",
+            "chunk_index": 3,
+            "start_offset": 750,
+            "end_offset": 1050,
+            "distance": 0.18008041381835938,
+            "text": "in summer we pour something brighter from Ethiopia.\nAsk the barista what is open right now and they will offer you a small taste\nbefore you commit to a cup.\n\nTEA AND OTHER THINGS\n\nAssam with steamed milk - $3.60\nGenmaicha - $3.40\nChamomile with honey - $3.50\nThick drinking chocolate - $4.80\nYuzu sod"
+          }
+        ],
+        "expected_source_found": true,
+        "manual_relevance_assessment": ""
+      }
+    }
+  }
+}
