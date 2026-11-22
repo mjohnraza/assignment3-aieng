@@ -107,10 +107,10 @@ Run all steps using `uv run python <path>`:
 | :--- | :---: | :---: | :--- |
 | **Source Recall@3** | 0.917 | **1.000** | Perfect source coverage: all relevant policy documents captured in top-3. |
 | **Source Precision@3** | **0.945** | 0.778 | Baseline matches isolated lines; overlapping windows include contiguous sentences. |
-| **Passage Recall@3** | 0.472 | **0.945** | Overlapping chunks capture nearly all target ground-truth evidence passages. |
-| **Passage Precision@3**| 0.222 | **0.444** | Deduplicated ground-truth evidence density (100% improvement without chunk inflation). |
+| **Passage Recall@3** | 0.305 | **0.945** | Overlapping chunks capture nearly all target ground-truth evidence passages under strict matchers. |
+| **Passage Precision@3**| 0.167 | **0.444** | Deduplicated ground-truth evidence density (+166% improvement without chunk inflation). |
 | **Source Coverage Recall**| 0.750 | **1.000** | 100% of expected source documents contain verified answering evidence in top-3. |
-| **Mean Reciprocal Rank** | 0.500 | **1.000** | First relevant ground-truth evidence rank is preserved at rank 1 across all queries. |
+| **Mean Reciprocal Rank** | 0.333 | **1.000** | First relevant ground-truth evidence rank is preserved at rank 1 across all queries. |
 
 > **Ground-Truth Deduplication:** Ground-truth passages are annotated with stable unique IDs (`gt_hours_weekend`, `gt_animals_terrace`, `gt_laptop_policy`, `gt_wifi_credentials`, `gt_power_sockets`, etc.). Overlapping chunks covering the same evidence passage are strictly deduplicated prior to computing passage recall and precision, ensuring metrics evaluate actual evidence coverage rather than chunk fragment inflation. The laptop/Wi-Fi/power query now tracks three distinct ground-truth passages (`gt_laptop_policy`, `gt_wifi_credentials`, `gt_power_sockets`) to verify retrieval of each information dimension independently. Evidence is serialized in `evidence/part_a_retrieval_comparison.json`.
 
@@ -152,7 +152,7 @@ uv run python steps/04_react_agent.py
 - Emits citations and explicitly distinguishes confirmed facts from unconfirmed details.
 
 ### Automated Testing & CI
-Run the complete test suite (62 passed):
+Run the complete test suite (54 passed):
 ```bash
 uv run pytest
 ```
@@ -162,15 +162,15 @@ platform win32 -- Python 3.12.10, pytest-9.2.0, pluggy-1.7.0
 rootdir: C:\Users\exam.DESKTOP-LNCC6CA\Desktop\AA3\wandering-kettle-assistant
 configfile: pyproject.toml
 plugins: anyio-4.16.0, asyncio-1.5.0
-collected 62 items
+collected 54 items
 
-tests\test_mcp_integration.py .....                                      [  8%]
-tests\test_raw_jsonrpc.py .........                                      [ 22%]
-tests\test_react_agent.py ......................                          [ 59%]
+tests\test_mcp_integration.py .....                                      [  9%]
+tests\test_raw_jsonrpc.py ..........                                     [ 27%]
+tests\test_react_agent.py ................                                [ 57%]
 tests\test_retrieval.py ...........                                      [ 77%]
-tests\test_validation.py ..............                                  [100%]
+tests\test_validation.py ...........                                      [100%]
 
-============================= 62 passed in 49.12s =============================
+============================= 54 passed in 50.39s =============================
 ```
 
 - **Live MCP Server Integration Tests (`tests/test_mcp_integration.py`):** Spawns `server.py` over Stdio transport via `MCPClientManager` without mocks, verifying `initialize`, `tools/list`, and `tools/call`.

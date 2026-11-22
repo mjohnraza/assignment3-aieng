@@ -341,32 +341,148 @@ def validate_and_execute_tool(
 
 def classify_amenity_status(response_text: str, amenity: str = "ev") -> str:
     """
-    Classify the epistemic status asserted for an amenity into three distinct categories:
+    Classify the epistemic status asserted for an amenity into five distinct categories:
     - 'confirmed_available': Knowledge base confirms the facility exists.
     - 'confirmed_unavailable': Knowledge base confirms the facility does NOT exist.
     - 'undocumented': Knowledge base contains no information about the facility.
+    - 'contradictory': Conflicting assertions (e.g. both undocumented and unavailable, or available and unavailable).
     - 'unknown': Ambiguous or unaddressed.
     """
     lower = response_text.lower()
 
     if amenity in ("ev", "electric_vehicle", "charging"):
-        # 1. Check positive availability claim
-        if any(kw in lower for kw in ["ev charging stations are available", "ev charging is available", "charging stations on site", "offers electric vehicle charging", "provides ev charging", "has ev charging"]):
+        # 1. Positive availability claims (excluding negated assertions)
+        has_positive_avail = any(kw in lower for kw in [
+            "ev charging stations are available",
+            "ev charging is available",
+            "charging stations on site",
+            "offers electric vehicle charging",
+            "provides ev charging",
+            "has ev charging",
+            "electric vehicle charging is available",
+            "charging stations are available on site",
+            "provides electric vehicle charging",
+            "has electric vehicle charging",
+        ])
+        has_negation = any(neg in lower for neg in [
+            "no ev charging",
+            "no electric vehicle",
+            "not available",
+            "not provided",
+            "does not offer",
+            "does not have",
+            "no charging",
+            "unavailable",
+        ])
+        is_avail = has_positive_avail and not has_negation
+
+        # 2. Undocumented / unmentioned claims
+        is_undoc = any(kw in lower for kw in [
+            "not mentioned",
+            "no mention",
+            "unmentioned",
+            "not documented",
+            "undocumented",
+            "cannot be confirmed",
+            "cannot confirm",
+            "no information",
+            "not found in the documentation",
+            "documentation does not mention",
+            "no record of ev",
+            "no record",
+            "not referenced",
+            "unverified in",
+        ])
+
+        # 3. Confirmed unavailable claims
+        is_unavail = any(kw in lower for kw in [
+            "ev charging is not provided",
+            "no ev charging",
+            "no electric vehicle charging",
+            "ev charging is unavailable",
+            "ev charging stations are not available",
+            "does not have ev charging",
+            "does not offer ev charging",
+            "electric vehicle charging is not available",
+            "electric vehicle charging is unavailable",
+        ])
+
+        # Contradiction: mutually exclusive epistemic states asserted simultaneously
+        # E.g., both claiming it is undocumented AND claiming it is confirmed unavailable,
+        # or claiming it is available AND unavailable/undocumented
+        if (is_undoc and is_unavail) or (has_positive_avail and is_unavail and not has_negation) or (is_avail and is_undoc):
+            return "contradictory"
+        # Explicit contradiction when text states both positive and negative independent clauses
+        if is_undoc and is_unavail:
+            return "contradictory"
+        if has_positive_avail and is_unavail:
+            # Check if it was an explicit contradiction like "EV charging is available on site, but no ev charging is provided"
+            if any(conj in lower for conj in ["but no", "however no", "yet no", "and no"]):
+                return "contradictory"
+        if is_avail:
             return "confirmed_available"
-        # 2. Check undocumented / unmentioned
-        if any(kw in lower for kw in ["not mentioned", "no mention", "unmentioned", "not documented", "undocumented", "cannot be confirmed", "cannot confirm", "no information", "not found in the documentation", "documentation does not mention", "no record"]):
+        if is_undoc:
             return "undocumented"
-        # 3. Check confirmed unavailable
-        if any(kw in lower for kw in ["ev charging is not provided", "no ev charging", "no electric vehicle charging", "ev charging is unavailable"]):
+        if is_unavail:
             return "confirmed_unavailable"
         return "unknown"
 
     if amenity in ("parking", "car_park"):
-        if any(kw in lower for kw in ["dedicated customer parking is available", "parking is available", "free on-site customer parking", "has parking", "private car park on site"]):
+        has_positive_avail = any(kw in lower for kw in [
+            "dedicated customer parking is available",
+            "parking is available",
+            "free on-site customer parking",
+            "has parking",
+            "private car park on site",
+            "car park is available",
+            "customer parking is available",
+            "has dedicated parking",
+            "has customer parking",
+        ])
+        has_negation = any(neg in lower for neg in [
+            "no car park",
+            "no parking",
+            "no customer parking",
+            "no dedicated",
+            "does not have",
+            "unavailable",
+            "not available",
+        ])
+        is_avail = has_positive_avail and not has_negation
+
+        is_unavail = any(kw in lower for kw in [
+            "no car park",
+            "no private parking",
+            "no customer parking",
+            "no dedicated parking",
+            "no parking",
+            "parking is unavailable",
+            "parking is not available",
+            "does not have parking",
+            "does not have dedicated customer parking",
+            "no dedicated customer parking",
+            "coin lot behind the post office",
+            "closest option",
+        ])
+
+        is_undoc = any(kw in lower for kw in [
+            "parking is not mentioned",
+            "parking is undocumented",
+            "parking cannot be confirmed",
+            "no mention of parking",
+            "no information about parking",
+        ])
+
+        if (is_undoc and is_unavail) or (is_avail and is_undoc):
+            return "contradictory"
+        if has_positive_avail and is_unavail:
+            if any(conj in lower for conj in ["but no", "however no", "yet no", "and we have no", ". we have no", ", we have no"]):
+                return "contradictory"
+        if is_avail:
             return "confirmed_available"
-        if any(kw in lower for kw in ["no car park", "no private parking", "no customer parking", "no dedicated parking", "no parking", "parking is unavailable", "does not have parking", "coin lot behind the post office"]):
+        if is_unavail:
             return "confirmed_unavailable"
-        if any(kw in lower for kw in ["parking is not mentioned", "parking is undocumented", "parking cannot be confirmed"]):
+        if is_undoc:
             return "undocumented"
         return "unknown"
 
@@ -376,96 +492,17 @@ def classify_amenity_status(response_text: str, amenity: str = "ev") -> str:
 def verify_negative_response(response_text: str) -> Dict[str, Any]:
     """
     Rigorously and independently verifies both facets of the unanswerable query:
-    1. Parking (Confirmed Unavailable): Confirms the response explicitly notes that on-site/private
-       parking does not exist (hours_access.txt explicitly confirms 'We have no car park') or directs
-       to the off-site coin lot.
-    2. EV Charging (Undocumented): Confirms the response explicitly identifies that electric vehicle
-       (EV) charging is NOT DOCUMENTED / UNMENTIONED / CANNOT BE CONFIRMED in café documentation.
-       Crucially, bare 'unavailable' is NOT treated as undocumented.
-    Both must pass independently to prevent partial hallucinations and epistemic mischaracterizations.
-
-    Additionally rejects contradictory responses where both undocumented AND confirmed-unavailable
-    signals are present for EV, as these are mutually exclusive epistemic states.
+    1. Parking (Confirmed Unavailable): Must be classified strictly as 'confirmed_unavailable'
+       (hours_access.txt explicitly confirms 'We have no car park' / directs to coin lot).
+    2. EV Charging (Undocumented): Must be classified strictly as 'undocumented'
+       (unmentioned in café documents).
+    Both must pass independently to prevent partial hallucinations, contradictions, and epistemic mischaracterizations.
     """
-    lower = response_text.lower()
+    parking_status = classify_amenity_status(response_text, "parking")
+    ev_status = classify_amenity_status(response_text, "ev")
 
-    # Dimension 1: Parking status check (ground truth: confirmed absent in hours_access.txt)
-    parking_unavailable_signals = [
-        "no car park",
-        "no private parking",
-        "no customer parking",
-        "does not have dedicated customer parking",
-        "does not have dedicated parking",
-        "no dedicated customer parking",
-        "no dedicated parking",
-        "does not have parking",
-        "parking is not available",
-        "no parking available",
-        "parking is unavailable",
-        "coin lot behind the post office",
-        "closest option",
-    ]
-    parking_confirmed_unavailable = any(sig in lower for sig in parking_unavailable_signals)
-    parking_false_assertion = (
-        "dedicated customer parking is available" in lower
-        or "free on-site customer parking" in lower
-        or "private car park on site" in lower
-        or "car park is available" in lower
-        or "customer parking is available" in lower
-        or "has dedicated parking" in lower
-        or "has customer parking" in lower
-    )
-    parking_pass = parking_confirmed_unavailable and not parking_false_assertion
-
-    # Dimension 2: EV charging status check (ground truth: undocumented in café documents)
-    # Strictly requires words indicating lack of documentation / mention / verification
-    ev_undocumented_signals = [
-        "not mentioned",
-        "no mention",
-        "unmentioned",
-        "not documented",
-        "undocumented",
-        "cannot be confirmed",
-        "cannot confirm",
-        "no information",
-        "not found in the documentation",
-        "documentation does not mention",
-        "no record of ev",
-        "not referenced",
-        "unverified in",
-    ]
-    ev_confirmed_undocumented = any(sig in lower for sig in ev_undocumented_signals)
-
-    # Confirmed-unavailable signals for EV (mutually exclusive with undocumented)
-    ev_confirmed_unavailable_signals = [
-        "ev charging is not provided",
-        "no ev charging",
-        "no electric vehicle charging",
-        "ev charging is unavailable",
-        "ev charging stations are not available",
-        "does not have ev charging",
-        "does not offer ev charging",
-    ]
-    ev_confirmed_unavailable = any(sig in lower for sig in ev_confirmed_unavailable_signals)
-
-    # Broad detection of false availability claims for EV charging
-    ev_false_assertion = (
-        "ev charging stations are available" in lower
-        or "ev charging is available" in lower
-        or "electric vehicle charging is available" in lower
-        or "offers electric vehicle charging" in lower
-        or "charging stations are available on site" in lower
-        or "charging stations on site" in lower
-        or "has ev charging" in lower
-        or "has electric vehicle charging" in lower
-        or "provides ev charging" in lower
-        or "provides electric vehicle charging" in lower
-    )
-
-    # Contradiction detection: undocumented and confirmed-unavailable are mutually exclusive
-    ev_contradictory = ev_confirmed_undocumented and ev_confirmed_unavailable
-
-    ev_pass = ev_confirmed_undocumented and not ev_false_assertion and not ev_contradictory
+    parking_pass = (parking_status == "confirmed_unavailable")
+    ev_pass = (ev_status == "undocumented")
 
     overall_safe = parking_pass and ev_pass
 
@@ -474,13 +511,8 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
         "parking_pass": parking_pass,
         "ev_pass": ev_pass,
         "details": {
-            "parking_signal_found": parking_confirmed_unavailable,
-            "parking_false_assertion": parking_false_assertion,
-            "ev_signal_found": ev_confirmed_undocumented,
-            "ev_false_assertion": ev_false_assertion,
-            "ev_contradictory": ev_contradictory,
-            "parking_classification": classify_amenity_status(response_text, "parking"),
-            "ev_classification": classify_amenity_status(response_text, "ev"),
+            "parking_classification": parking_status,
+            "ev_classification": ev_status,
         },
     }
 

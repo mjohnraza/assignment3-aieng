@@ -40,10 +40,12 @@ GROUND_TRUTH_PASSAGES = {
         "source": "hours_access.txt",
         "description": "Saturday 9:00 to 22:00 AND Sunday 9:00 to 17:00 schedule",
         "matcher": lambda text: (
-            # Must establish BOTH Saturday AND Sunday operating hours
+            # Must establish BOTH Saturday (9:00 to 22:00) AND Sunday (9:00 to 17:00) operating hours
             "saturday" in text.lower()
             and "sunday" in text.lower()
-            and any(t in text for t in ["9:00", "22:00", "17:00"])
+            and "9:00" in text
+            and "22:00" in text
+            and "17:00" in text
         ),
     },
     "gt_animals_terrace": {
@@ -104,11 +106,11 @@ GROUND_TRUTH_PASSAGES = {
         "source": "allergens.txt",
         "description": "No gluten-free bread; rice porridge and soup usually safe (barley caveat)",
         "matcher": lambda text: (
-            # Must verify BOTH the limitation (no gluten-free bread) AND safe alternatives
+            # Must verify the limitation (no gluten-free bread), safe alternatives, AND stock/barley caveat
             ("gluten" in text.lower() or "without wheat" in text.lower())
-            and ("no" in text.lower() or "not" in text.lower() or "cannot" in text.lower())
-            and ("bread" in text.lower())
+            and ("no gluten free bread" in text.lower() or ("no" in text.lower() and "bread" in text.lower()))
             and ("porridge" in text.lower() or "soup" in text.lower())
+            and ("barley" in text.lower() or "stock" in text.lower() or "cross" in text.lower() or "trace" in text.lower())
         ),
     },
     "gt_warm_winter_drinks": {

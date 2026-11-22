@@ -137,6 +137,7 @@ def run_raw_jsonrpc_exchange():
         print(f"\nExtracted and Validated Tool Content:\n{extracted_text}", flush=True)
 
     finally:
+        RobustRawJSONRPCClient.close_reader(proc)
         proc.terminate()
         try:
             proc.wait(timeout=3)

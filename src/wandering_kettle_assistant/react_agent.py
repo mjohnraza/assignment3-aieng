@@ -123,7 +123,10 @@ def extract_query_facets(question: str) -> Dict[str, str]:
     return facets
 
 
-def _extract_constraints(question: str, facets: Dict[str, str]) -> List[QueryConstraint]:
+def _extract_constraints(
+    question: str,
+    facets: Optional[Dict[str, str]] = None,
+) -> List[QueryConstraint]:
     """Extract query-specific constraints from the question text.
 
     Each constraint specifies the EXACT entity or detail the user asked about,
@@ -133,38 +136,37 @@ def _extract_constraints(question: str, facets: Dict[str, str]) -> List[QueryCon
     q = question.lower()
     constraints: List[QueryConstraint] = []
 
-    if "pet_policy" in facets:
-        # Determine the specific animal the user asked about
-        if "cat" in q:
-            constraints.append(QueryConstraint(
-                facet_key="pet_policy",
-                description="Cat policy on the terrace/outdoors",
-                checker=lambda t: (
-                    ("cat" in t or "animal" in t or "assistance" in t)
-                    and ("terrace" in t or "outdoor" in t or "welcome" in t or "not mentioned" in t)
-                ),
-            ))
-        elif "dog" in q:
-            constraints.append(QueryConstraint(
-                facet_key="pet_policy",
-                description="Dog policy on the terrace/outdoors",
-                checker=lambda t: (
-                    "dog" in t
-                    and ("terrace" in t or "outdoor" in t or "stairs" in t or "welcome" in t)
-                ),
-            ))
-        else:
-            # Generic pet/animal/terrace question
-            constraints.append(QueryConstraint(
-                facet_key="pet_policy",
-                description="Pet/animal policy on the terrace/outdoors",
-                checker=lambda t: (
-                    ("dog" in t or "animal" in t or "pet" in t)
-                    and ("terrace" in t or "outdoor" in t or "stairs" in t)
-                ),
-            ))
+    # 1. Animal / Pet policy
+    if "cat" in q:
+        constraints.append(QueryConstraint(
+            facet_key="pet_policy",
+            description="Cat policy on the terrace/outdoors (cats specifically)",
+            checker=lambda t: (
+                "cat" in t
+                and ("terrace" in t or "outdoor" in t or "welcome" in t or "not mentioned" in t or "prohibited" in t)
+            ),
+        ))
+    elif "dog" in q:
+        constraints.append(QueryConstraint(
+            facet_key="pet_policy",
+            description="Dog policy on the terrace/outdoors",
+            checker=lambda t: (
+                "dog" in t
+                and ("terrace" in t or "outdoor" in t or "stairs" in t or "welcome" in t)
+            ),
+        ))
+    elif any(k in q for k in ["pet", "animal", "terrace", "sit outside", "outside", "patio"]):
+        constraints.append(QueryConstraint(
+            facet_key="pet_policy",
+            description="Pet/animal policy on the terrace/outdoors",
+            checker=lambda t: (
+                ("dog" in t or "animal" in t or "pet" in t)
+                and ("terrace" in t or "outdoor" in t or "stairs" in t)
+            ),
+        ))
 
-    if "food_menu" in facets:
+    # 2. Food menu
+    if any(k in q for k in ["food", "menu", "eat", "sandwich", "pastry", "breakfast", "lunch", "dish"]):
         constraints.append(QueryConstraint(
             facet_key="food_menu",
             description="Food menu options",
@@ -173,82 +175,105 @@ def _extract_constraints(question: str, facets: Dict[str, str]) -> List[QueryCon
             ),
         ))
 
-    if "allergens_diet" in facets:
-        # Determine the specific dietary concern
-        if "gluten" in q or "wheat" in q:
-            constraints.append(QueryConstraint(
-                facet_key="allergens_diet",
-                description="Gluten/wheat dietary accommodations",
-                checker=lambda t: (
-                    ("gluten" in t or "wheat" in t)
-                    and ("bread" in t or "porridge" in t or "soup" in t or "pastry" in t or "pastries" in t)
-                ),
-            ))
-        elif "vegan" in q or "plant" in q:
-            constraints.append(QueryConstraint(
-                facet_key="allergens_diet",
-                description="Vegan/plant-based dietary options",
-                checker=lambda t: (
-                    ("plant based" in t or "vegan" in t or "without animal" in t or "without dairy" in t or "no dairy" in t)
-                    or ("hummus" in t and "vegetable" in t)
-                ),
-            ))
-        elif "nut" in q:
-            constraints.append(QueryConstraint(
-                facet_key="allergens_diet",
-                description="Nut allergy information",
-                checker=lambda t: ("nut" in t or "almond" in t or "peanut" in t),
-            ))
-        else:
-            # Generic allergen query
-            constraints.append(QueryConstraint(
-                facet_key="allergens_diet",
-                description="Allergens and dietary accommodations",
-                checker=lambda t: any(
-                    term in t for term in ["gluten", "wheat", "dairy", "plant based", "peanut", "nut", "animal product", "allergen"]
-                ),
-            ))
+    # 3. Dietary & Allergens (strictly differentiated)
+    if "gluten" in q or "wheat" in q:
+        constraints.append(QueryConstraint(
+            facet_key="allergens_diet",
+            description="Gluten/wheat dietary accommodations",
+            checker=lambda t: (
+                ("gluten" in t or "wheat" in t or "without wheat" in t)
+                and ("bread" in t or "porridge" in t or "soup" in t or "pastry" in t or "pastries" in t)
+            ),
+        ))
+    if "vegan" in q or "plant" in q:
+        constraints.append(QueryConstraint(
+            facet_key="allergens_diet",
+            description="Vegan/plant-based dietary options",
+            checker=lambda t: (
+                ("plant based" in t or "vegan" in t or "without animal products" in t or "without animal" in t or "without dairy" in t or "no dairy" in t)
+            ),
+        ))
+    if "nut" in q:
+        constraints.append(QueryConstraint(
+            facet_key="allergens_diet",
+            description="Nut allergy information",
+            checker=lambda t: ("nut" in t or "almond" in t or "peanut" in t),
+        ))
+    if any(k in q for k in ["allerg", "dairy", "diet"]) and not ("gluten" in q or "wheat" in q or "vegan" in q or "plant" in q or "nut" in q):
+        constraints.append(QueryConstraint(
+            facet_key="allergens_diet",
+            description="Allergens and dietary accommodations",
+            checker=lambda t: any(
+                term in t for term in ["gluten", "wheat", "dairy", "plant based", "peanut", "nut", "animal product", "allergen"]
+            ),
+        ))
 
-    if "hours" in facets:
-        # Determine specific day(s) the user asked about
-        if "saturday" in q and "sunday" in q:
-            constraints.append(QueryConstraint(
-                facet_key="hours",
-                description="Saturday AND Sunday operating hours",
-                checker=lambda t: (
-                    "saturday" in t and "sunday" in t
-                    and any(ts in t for ts in ["9:00", "22:00", "17:00"])
-                ),
-            ))
-        elif "saturday" in q:
-            constraints.append(QueryConstraint(
-                facet_key="hours",
-                description="Saturday operating hours",
-                checker=lambda t: "saturday" in t and any(ts in t for ts in ["9:00", "22:00"]),
-            ))
-        elif "sunday" in q:
-            constraints.append(QueryConstraint(
-                facet_key="hours",
-                description="Sunday operating hours",
-                checker=lambda t: "sunday" in t and any(ts in t for ts in ["9:00", "17:00"]),
-            ))
-        else:
-            constraints.append(QueryConstraint(
-                facet_key="hours",
-                description="Operating hours and access",
-                checker=lambda t: (
-                    any(d in t for d in ["monday", "friday", "saturday", "sunday", "schedule"])
-                    and any(ts in t for ts in ["8:00", "9:00", "18:00", "22:00", "17:00", "open", "closed"])
-                ),
-            ))
+    # 4. Operating hours
+    if "saturday" in q and "sunday" in q:
+        constraints.append(QueryConstraint(
+            facet_key="hours",
+            description="Saturday operating hours (9:00 to 22:00)",
+            checker=lambda t: "saturday" in t and "9:00" in t and "22:00" in t,
+        ))
+        constraints.append(QueryConstraint(
+            facet_key="hours",
+            description="Sunday operating hours (9:00 to 17:00)",
+            checker=lambda t: "sunday" in t and "9:00" in t and "17:00" in t,
+        ))
+    elif "saturday" in q:
+        constraints.append(QueryConstraint(
+            facet_key="hours",
+            description="Saturday operating hours (9:00 to 22:00)",
+            checker=lambda t: "saturday" in t and "9:00" in t and "22:00" in t,
+        ))
+    elif "sunday" in q:
+        constraints.append(QueryConstraint(
+            facet_key="hours",
+            description="Sunday operating hours (9:00 to 17:00)",
+            checker=lambda t: "sunday" in t and "9:00" in t and "17:00" in t,
+        ))
+    elif any(k in q for k in ["hour", "open", "close", "schedule", "when are you"]):
+        constraints.append(QueryConstraint(
+            facet_key="hours",
+            description="Operating hours and access",
+            checker=lambda t: (
+                any(d in t for d in ["monday", "friday", "saturday", "sunday", "schedule"])
+                and any(ts in t for ts in ["8:00", "9:00", "18:00", "22:00", "17:00", "open", "closed"])
+            ),
+        ))
 
-    if "work_wifi" in facets:
+    # 5. Working environment: Laptop policy, Wi-Fi credentials, Power sockets
+    if "laptop" in q or "stay and work" in q:
+        constraints.append(QueryConstraint(
+            facet_key="work_wifi",
+            description="Laptop policy (curfew after 6pm)",
+            checker=lambda t: (
+                ("laptop" in t or "stay and work" in t)
+                and ("friday" in t or "saturday" in t or "conversation" in t or "ninety minutes" in t)
+            ),
+        ))
+    if any(k in q for k in ["wifi", "wi-fi", "internet", "wireless"]):
+        constraints.append(QueryConstraint(
+            facet_key="work_wifi",
+            description="Wi-Fi credentials (kettle-guest)",
+            checker=lambda t: "kettle-guest" in t and ("password" in t or "coaster" in t or "wifi" in t or "wireless" in t),
+        ))
+    if any(k in q for k in ["socket", "outlet", "power"]):
+        constraints.append(QueryConstraint(
+            facet_key="work_wifi",
+            description="Power socket locations (window bench/bookshelf)",
+            checker=lambda t: (
+                ("socket" in t or "outlet" in t or "power" in t)
+                and ("window bench" in t or "book" in t or "six" in t or "two" in t)
+            ),
+        ))
+    if "work" in q and not ("laptop" in q or "stay and work" in q or any(k in q for k in ["wifi", "wi-fi", "internet", "socket", "outlet"])):
         constraints.append(QueryConstraint(
             facet_key="work_wifi",
             description="Laptop and Wi-Fi policy",
             checker=lambda t: (
                 ("kettle-guest" in t or "socket" in t or "window bench" in t)
-                and ("wifi" in t or "laptop" in t or "work" in t or "wireless" in t)
+                and ("wifi" in t or "laptop" in t or "work" in t)
             ),
         ))
 
@@ -481,11 +506,11 @@ class ReActAgent:
 
                 # Stopping Condition: If no tool calls were requested, LLM attempted to conclude
                 if not tool_calls:
-                    required_facets = extract_query_facets(user_question)
-                    covered, missing = check_evidence_coverage(required_facets, trace)
+                    query_constraints = _extract_constraints(user_question)
+                    covered, missing = check_evidence_coverage_with_constraints(query_constraints, trace)
 
                     # For multi-part queries, if some aspects lack evidence, prevent premature stopping
-                    if len(required_facets) > 1 and missing and steps < self.max_steps:
+                    if len(query_constraints) > 1 and missing and steps < self.max_steps:
                         print(f">> [Evidence Completeness Interceptor]: Missing evidence for: {missing}. Forcing continuation.")
                         messages.append(msg)
                         messages.append({
@@ -658,8 +683,8 @@ class ReActAgent:
 
             # Safeguard: Max steps reached with Deterministic Safe-Stop Mechanism
             print(">> [Safeguard]: Max iterations reached. Executing deterministic safe-stop synthesis.\n")
-            required_facets = extract_query_facets(user_question)
-            covered, missing = check_evidence_coverage(required_facets, trace)
+            query_constraints = _extract_constraints(user_question)
+            covered, missing = check_evidence_coverage_with_constraints(query_constraints, trace)
 
             messages.append({
                 "role": "user",

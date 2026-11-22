@@ -91,7 +91,6 @@ def test_stdout_server_log_isolation():
     """Verify that stray server logs on stdout preceding the JSON frame are safely ignored."""
     mock_proc = MagicMock()
     mock_proc.poll.return_value = None
-    # Simulate stdout emitting a log line followed by the actual JSON-RPC response
     mock_proc.stdout.readline.side_effect = [
         "2026-11-22 INFO [server]: Starting up FastMCP\n",
         "Loading weights: 100%\n",
@@ -101,6 +100,7 @@ def test_stdout_server_log_isolation():
     frame = RobustRawJSONRPCClient.read_next_jsonrpc_frame(mock_proc, expected_id=1, timeout=2.0)
     assert frame["id"] == 1
     assert frame["result"]["serverInfo"]["name"] == "TestServer"
+    RobustRawJSONRPCClient.close_reader(mock_proc)
 
 
 def test_server_process_termination_handling():
@@ -113,11 +113,8 @@ def test_server_process_termination_handling():
     with pytest.raises(ServerProcessTerminatedError) as exc_info:
         RobustRawJSONRPCClient.read_next_jsonrpc_frame(mock_proc, expected_id=1, timeout=1.0)
     assert "terminated" in str(exc_info.value).lower()
+    RobustRawJSONRPCClient.close_reader(mock_proc)
 
-
-# ---------------------------------------------------------------------------
-# Phase 2: Real subprocess timeout test with thread+queue
-# ---------------------------------------------------------------------------
 
 def test_real_subprocess_timeout():
     """Start a real subprocess that never writes stdout and verify JSONRPCTimeoutError
@@ -126,7 +123,6 @@ def test_real_subprocess_timeout():
     This proves the thread+queue pattern genuinely interrupts a blocking readline().
     Works on both Windows and Linux.
     """
-    # Create a tiny Python script that sleeps forever (never writes to stdout)
     script_content = "import time\nwhile True:\n    time.sleep(60)\n"
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
@@ -151,15 +147,87 @@ def test_real_subprocess_timeout():
             )
         elapsed = time.time() - t0
 
-        # Timeout must fire within timeout + tolerance (not block forever)
         assert elapsed < timeout_seconds + tolerance_seconds, (
             f"Timeout took {elapsed:.2f}s but should have fired within {timeout_seconds + tolerance_seconds:.1f}s"
         )
-        # Must have waited at least close to the timeout
         assert elapsed >= timeout_seconds * 0.8, (
             f"Timeout fired too early at {elapsed:.2f}s (expected >= {timeout_seconds * 0.8:.1f}s)"
         )
     finally:
+        RobustRawJSONRPCClient.close_reader(proc)
         proc.kill()
         proc.wait()
+        os.unlink(script_path)
+
+
+def test_persistent_reader_sequential_requests_no_dropped_frames():
+    """Prove that multiple sequential request-response cycles on the same subprocess
+    do not lose, skip, or abandon responses across consecutive calls.
+
+    Verifies that exactly one reader thread and one queue persists for the process.
+    """
+    # Create an echo responder script: reads JSON-RPC requests from stdin, responds on stdout
+    responder_code = """
+import sys, json
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        req = json.loads(line)
+        req_id = req.get("id")
+        method = req.get("method")
+        resp = {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {"echo_method": method, "sequence": req_id}
+        }
+        sys.stdout.write(json.dumps(resp) + "\\n")
+        sys.stdout.flush()
+    except Exception as e:
+        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32000, "message": str(e)}}) + "\\n")
+        sys.stdout.flush()
+"""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+        f.write(responder_code)
+        script_path = f.name
+
+    proc = subprocess.Popen(
+        [sys.executable, "-u", script_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=0,
+    )
+
+    client = RobustRawJSONRPCClient(proc)
+
+    try:
+        # Perform 5 sequential request-response exchanges across the same reader
+        for req_id in range(1, 6):
+            payload = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "method": f"test_action_{req_id}",
+                "params": {"step": req_id},
+            }
+            proc.stdin.write(json.dumps(payload) + "\n")
+            proc.stdin.flush()
+
+            # Read frame with expected ID matching the sent request
+            resp = RobustRawJSONRPCClient.read_next_jsonrpc_frame(proc, expected_id=req_id, timeout=3.0)
+            assert resp["id"] == req_id
+            assert resp["result"]["sequence"] == req_id
+            assert resp["result"]["echo_method"] == f"test_action_{req_id}"
+
+    finally:
+        client.close()
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            pass
         os.unlink(script_path)

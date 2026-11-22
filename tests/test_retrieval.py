@@ -55,7 +55,6 @@ def test_overlapping_chunks_from_same_ground_truth_passage_deduplicate():
     """Verify that multiple overlapping chunks covering the SAME ground-truth passage
     do NOT artificially inflate passage recall or count as multiple passages.
     """
-    # Simulate top-3 retrieved results where all 3 are overlapping chunks of the terrace policy
     overlapping_results = [
         {
             "id": "faq.txt_chunk_4",
@@ -83,9 +82,7 @@ def test_overlapping_chunks_from_same_ground_truth_passage_deduplicate():
         expected_passage_ids=expected_passage_ids,
     )
 
-    # All 3 chunks map to the single ground-truth passage gt_animals_terrace.
-    # Deduplication ensures passage recall is exactly 1.0 (1 of 1 expected target passages retrieved),
-    # NOT 3.0 or inflated.
+    # Deduplication ensures passage recall is exactly 1.0 (1 of 1 expected target passages retrieved)
     assert metrics["passage_recall_at_k"] == 1.0
     # Passage precision is 1 unique relevant passage out of 3 retrieved chunks = 0.333
     assert metrics["passage_precision_at_k"] == 0.333
@@ -96,79 +93,103 @@ def test_overlapping_chunks_from_same_ground_truth_passage_deduplicate():
 
 
 # ---------------------------------------------------------------------------
-# Phase 1: Ground-Truth Matcher Strictness Tests
+# Part A: Comprehensive Ground-Truth Matcher Positive & Negative Tests
 # ---------------------------------------------------------------------------
 
-def test_weekend_hours_matcher_requires_both_days():
-    """Saturday-only text must NOT match gt_hours_weekend; both Saturday AND Sunday required."""
+def test_gt_hours_weekend_matcher_positive_and_negative():
+    """Verify exact Saturday (9:00-22:00) AND Sunday (9:00-17:00) hours are strictly required."""
     matcher = GROUND_TRUTH_PASSAGES["gt_hours_weekend"]["matcher"]
 
-    # Only Saturday — must be rejected
+    # Positive: exact hours for both days
+    valid_text = "Saturday: 9:00 to 22:00\nSunday: 9:00 to 17:00"
+    assert matcher(valid_text) is True
+
+    # Negative 1: Saturday only (Sunday missing)
     assert matcher("Saturday: 9:00 to 22:00") is False
-    # Only Sunday — must be rejected
+
+    # Negative 2: Sunday only (Saturday missing)
     assert matcher("Sunday: 9:00 to 17:00") is False
-    # Both days — must be accepted
-    assert matcher("Saturday: 9:00 to 22:00  Sunday: 9:00 to 17:00") is True
+
+    # Negative 3: Both days present but missing exact closing hours
+    assert matcher("Saturday and Sunday: open from 9:00 onwards") is False
 
 
-def test_plant_based_matcher_rejects_generic_vegetable():
-    """Generic 'roasted vegetable sandwich' without plant-based context must be rejected."""
+def test_gt_animals_terrace_matcher_positive_and_negative():
+    """Verify outdoor terrace dog policy requires dogs/terrace/welcome."""
+    matcher = GROUND_TRUTH_PASSAGES["gt_animals_terrace"]["matcher"]
+
+    # Positive
+    assert matcher("Dogs are welcome on the small terrace at the top of the stairs.") is True
+    assert matcher("Animals: Dogs on terrace with water bowl by the door.") is True
+
+    # Negative: Indoor only or cats
+    assert matcher("Cats are allowed inside the main room.") is False
+    assert matcher("Payment options include contactless cards.") is False
+
+
+def test_gt_plant_based_sandwich_matcher_positive_and_negative():
+    """Verify plant-based dietary passage requires explicit plant-based/dairy-free declaration."""
     matcher = GROUND_TRUTH_PASSAGES["gt_plant_based_sandwich"]["matcher"]
 
-    # Generic vegetable + sandwich without 'plant based' or 'without animal products' — rejected
-    assert matcher("Roasted vegetable and hummus sandwich - $5.60") is False
-    # Explicit plant-based statement — accepted
-    assert matcher("Fully plant based: the roasted vegetable and hummus sandwich") is True
-    assert matcher("WITHOUT ANIMAL PRODUCTS: roasted vegetable and hummus sandwich, rice porridge") is True
+    # Positive
+    assert matcher("Fully plant based: the roasted vegetable and hummus sandwich and rice porridge") is True
+    assert matcher("WITHOUT ANIMAL PRODUCTS: roasted vegetable sandwich, rice porridge") is True
+
+    # Negative: Generic vegetable sandwich without plant-based certification
+    assert matcher("Roasted vegetable and hummus sandwich - $5.60 on sourdough") is False
+    assert matcher("Ham and comte on baguette - $5.80") is False
 
 
-def test_gluten_matcher_requires_limitation_and_alternative():
-    """Must verify BOTH the no-gluten-free-bread limitation AND safe alternatives."""
+def test_gt_gluten_wheat_alternatives_positive_and_negative():
+    """Verify gluten matcher checks limitation, alternatives, AND stock/barley caveat."""
     matcher = GROUND_TRUTH_PASSAGES["gt_gluten_wheat_alternatives"]["matcher"]
 
-    # Only mentions gluten and bread without limitation — rejected
-    assert matcher("Gluten free bread is available") is False
-    # Mentions gluten and porridge but no bread limitation — rejected
-    assert matcher("gluten-free porridge is available") is False
-    # Correct: mentions limitation (no gluten free bread) and alternative
-    assert matcher("We have no gluten free bread. The rice porridge and the soup of the day are usually safe.") is True
-
-
-def test_laptop_wifi_sockets_are_distinct_passages():
-    """Laptop policy, Wi-Fi credentials, and power sockets are separate ground-truth passages."""
-    assert "gt_laptop_policy" in GROUND_TRUTH_PASSAGES
-    assert "gt_wifi_credentials" in GROUND_TRUTH_PASSAGES
-    assert "gt_power_sockets" in GROUND_TRUTH_PASSAGES
-
-    laptop_matcher = GROUND_TRUTH_PASSAGES["gt_laptop_policy"]["matcher"]
-    wifi_matcher = GROUND_TRUTH_PASSAGES["gt_wifi_credentials"]["matcher"]
-    sockets_matcher = GROUND_TRUTH_PASSAGES["gt_power_sockets"]["matcher"]
-
-    laptop_text = "On Friday and Saturday after six in the evening we put the laptops away and the room becomes a place for conversation instead."
-    wifi_text = "The network is called kettle-guest and the password is printed on the back of the paper coaster."
-    sockets_text = "There are six sockets along the window bench and two more beside the shelf of secondhand books."
-
-    assert laptop_matcher(laptop_text) is True
-    assert wifi_matcher(wifi_text) is True
-    assert sockets_matcher(sockets_text) is True
-
-    # Cross-check: laptop text should NOT match wifi or sockets matchers
-    assert wifi_matcher(laptop_text) is False
-    assert sockets_matcher(laptop_text) is False
-
-
-def test_irrelevant_passage_from_expected_source_rejected():
-    """A passage from the correct source but with irrelevant content must not match."""
-    metrics = calculate_metrics(
-        results=[
-            {"id": "faq_chunk_99", "source": "faq.txt", "text": "We do not accept cheques or foreign currency."},
-        ],
-        expected_sources=["faq.txt"],
-        expected_passage_ids=["gt_animals_terrace"],
+    # Positive: full paragraph with limitation, safe porridge/soup, and barley stock caveat
+    valid_text = (
+        "WITHOUT WHEAT: We have no gluten free bread. The rice porridge and the soup of the day "
+        "are usually safe, but the soup sometimes uses a stock that contains barley, so ask on the day."
     )
-    # Source matches, but passage content is about payment, not animals
-    assert metrics["source_precision_at_k"] == 1.0
-    assert metrics["passage_recall_at_k"] == 0.0
+    assert matcher(valid_text) is True
+
+    # Negative 1: Mentions gluten free bread without limitation
+    assert matcher("We offer gluten free bread for all sandwiches.") is False
+
+    # Negative 2: Mentions porridge without the bread limitation and barley caveat
+    assert matcher("Rice porridge is safe without wheat.") is False
+
+
+def test_gt_laptop_wifi_sockets_are_distinct():
+    """Verify laptop curfew, Wi-Fi credentials, and power sockets do not cross-match."""
+    laptop_m = GROUND_TRUTH_PASSAGES["gt_laptop_policy"]["matcher"]
+    wifi_m = GROUND_TRUTH_PASSAGES["gt_wifi_credentials"]["matcher"]
+    socket_m = GROUND_TRUTH_PASSAGES["gt_power_sockets"]["matcher"]
+
+    laptop_text = "On Friday and Saturday after six in the evening we put the laptops away for conversation."
+    wifi_text = "The network is called kettle-guest and the password is on the coaster."
+    socket_text = "There are six sockets along the window bench and two more beside the book shelf."
+
+    # Positives
+    assert laptop_m(laptop_text) is True
+    assert wifi_m(wifi_text) is True
+    assert socket_m(socket_text) is True
+
+    # Mutually exclusive negatives
+    assert wifi_m(laptop_text) is False
+    assert socket_m(laptop_text) is False
+    assert laptop_m(wifi_text) is False
+    assert socket_m(wifi_text) is False
+
+
+def test_gt_warm_winter_drinks_positive_and_negative():
+    """Verify winter beverage matcher checks warm drink items."""
+    matcher = GROUND_TRUTH_PASSAGES["gt_warm_winter_drinks"]["matcher"]
+
+    assert matcher("Thick drinking chocolate - $4.80 for cold days") is True
+    assert matcher("Assam with steamed milk - $3.60 cup") is True
+    assert matcher("Chamomile with honey - $3.50 tea") is True
+
+    # Negative: cold brew or espresso house blend
+    assert matcher("Cold brew, steeped eighteen hours - $4.00") is False
 
 
 def test_empty_results_metrics():

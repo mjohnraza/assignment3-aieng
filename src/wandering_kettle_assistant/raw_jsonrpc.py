@@ -69,8 +69,100 @@ class MCPToolExecutionError(JSONRPCError):
     pass
 
 
+class SubprocessJSONRPCReader:
+    """Persistent background reader thread and queue for a single subprocess stdout stream."""
+
+    def __init__(self, proc: subprocess.Popen):
+        self.proc = proc
+        self.queue: queue.Queue = queue.Queue()
+        self._stop_event = threading.Event()
+        self._sentinel = object()
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def _worker(self) -> None:
+        try:
+            while not self._stop_event.is_set():
+                if self.proc.stdout is None:
+                    break
+                line = self.proc.stdout.readline()
+                if not line:
+                    # EOF reached
+                    self.queue.put(self._sentinel)
+                    break
+                stripped = line.strip()
+                # Discard non-JSON log lines so server logs never contaminate the protocol stream
+                if stripped.startswith("{"):
+                    self.queue.put(stripped)
+        except Exception:
+            self.queue.put(self._sentinel)
+
+    def read_frame(self, expected_id: Optional[int] = None, timeout: float = 5.0) -> Dict[str, Any]:
+        start_time = time.time()
+        while True:
+            remaining = timeout - (time.time() - start_time)
+            if remaining <= 0:
+                raise JSONRPCTimeoutError(f"Timed out after {timeout:.1f}s awaiting JSON-RPC response.")
+
+            try:
+                item = self.queue.get(timeout=min(remaining, 0.2))
+            except queue.Empty:
+                if self.proc.poll() is not None:
+                    raise ServerProcessTerminatedError(
+                        f"Server process terminated with code {self.proc.returncode} while awaiting response."
+                    )
+                continue
+
+            if item is self._sentinel:
+                raise ServerProcessTerminatedError(
+                    f"Server process terminated unexpectedly (exit code: {self.proc.returncode})."
+                )
+
+            return RobustRawJSONRPCClient.parse_and_validate_frame(item, expected_id=expected_id)
+
+    def close(self) -> None:
+        self._stop_event.set()
+
+
 class RobustRawJSONRPCClient:
-    """Defensive Raw JSON-RPC 2.0 Client communicating over pipes."""
+    """Defensive Raw JSON-RPC 2.0 Client communicating over pipes with persistent reader."""
+
+    _readers: Dict[Any, SubprocessJSONRPCReader] = {}
+    _lock = threading.Lock()
+
+    def __init__(self, proc: Optional[subprocess.Popen] = None):
+        self.proc = proc
+        if proc is not None:
+            self.reader = self.get_or_create_reader(proc)
+        else:
+            self.reader = None
+
+    @classmethod
+    def get_or_create_reader(cls, proc: subprocess.Popen) -> SubprocessJSONRPCReader:
+        with cls._lock:
+            key = id(proc)
+            if key not in cls._readers:
+                cls._readers[key] = SubprocessJSONRPCReader(proc)
+            return cls._readers[key]
+
+    @classmethod
+    def close_reader(cls, proc: subprocess.Popen) -> None:
+        with cls._lock:
+            key = id(proc)
+            reader = cls._readers.pop(key, None)
+            if reader:
+                reader.close()
+
+    @classmethod
+    def close_all_readers(cls) -> None:
+        with cls._lock:
+            for reader in cls._readers.values():
+                reader.close()
+            cls._readers.clear()
+
+    def close(self) -> None:
+        if self.proc is not None:
+            self.close_reader(self.proc)
 
     @staticmethod
     def parse_and_validate_frame(
@@ -161,55 +253,14 @@ class RobustRawJSONRPCClient:
         timeout: float = 5.0,
     ) -> Dict[str, Any]:
         """
-        Read the next line from process stdout with a genuine cross-platform timeout.
+        Read the next line from process stdout with a genuine cross-platform timeout,
+        using a persistent background reader thread and queue per subprocess.
 
-        Uses a background daemon thread to read lines into a queue.Queue, so
-        the main thread never blocks on readline() — it calls queue.get(timeout=...)
-        instead. This works identically on Windows and Linux.
+        Guarantees:
+        - Exactly one background reader thread per subprocess
+        - Retains unread frames across sequential requests in arrival order
+        - Bounded timeout via queue.get(timeout=...)
+        - Safe EOF and process termination detection
         """
-        line_queue: queue.Queue = queue.Queue()
-        _SENTINEL = None  # signals EOF from the reader thread
-
-        def _reader():
-            """Daemon thread: continuously reads lines from proc.stdout into the queue."""
-            try:
-                while True:
-                    line = proc.stdout.readline()
-                    if not line:
-                        line_queue.put(_SENTINEL)
-                        break
-                    line_queue.put(line)
-            except Exception:
-                line_queue.put(_SENTINEL)
-
-        reader_thread = threading.Thread(target=_reader, daemon=True)
-        reader_thread.start()
-
-        start_time = time.time()
-        while True:
-            remaining = timeout - (time.time() - start_time)
-            if remaining <= 0:
-                raise JSONRPCTimeoutError(f"Timed out after {timeout:.1f}s awaiting JSON-RPC response.")
-
-            try:
-                line = line_queue.get(timeout=min(remaining, 0.5))
-            except queue.Empty:
-                # Check if process terminated while we were waiting
-                if proc.poll() is not None:
-                    raise ServerProcessTerminatedError(
-                        f"Server process terminated with code {proc.returncode} while awaiting response."
-                    )
-                continue
-
-            if line is _SENTINEL:
-                # EOF from reader — process closed stdout
-                raise ServerProcessTerminatedError(
-                    f"Server process terminated unexpectedly (exit code: {proc.returncode})."
-                )
-
-            stripped = line.strip()
-            # Discard non-JSON log lines so server logs never contaminate the protocol stream
-            if not stripped.startswith("{"):
-                continue
-
-            return cls.parse_and_validate_frame(stripped, expected_id=expected_id)
+        reader = cls.get_or_create_reader(proc)
+        return reader.read_frame(expected_id=expected_id, timeout=timeout)

@@ -8,9 +8,9 @@
     "baseline": {
       "source_mean_precision_at_k": 0.945,
       "source_mean_recall_at_k": 0.917,
-      "passage_mean_precision_at_k": 0.222,
-      "passage_mean_recall_at_k": 0.472,
-      "mean_reciprocal_rank": 0.5
+      "passage_mean_precision_at_k": 0.167,
+      "passage_mean_recall_at_k": 0.305,
+      "mean_reciprocal_rank": 0.333
     },
     "overlapping": {
       "source_mean_precision_at_k": 0.778,
@@ -221,10 +221,10 @@
         "metrics": {
           "source_precision_at_k": 1.0,
           "source_recall_at_k": 1.0,
-          "passage_precision_at_k": 0.333,
-          "passage_recall_at_k": 1.0,
-          "source_coverage_recall": 1.0,
-          "reciprocal_rank": 1.0
+          "passage_precision_at_k": 0.0,
+          "passage_recall_at_k": 0.0,
+          "source_coverage_recall": 0.0,
+          "reciprocal_rank": 0.0
         },
         "retrieved": [
           {
