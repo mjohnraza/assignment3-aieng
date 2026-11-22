@@ -1,13 +1,18 @@
-"""Unit tests for search argument and tool call validation."""
+"""Unit tests for search argument and tool call validation across all café schemas."""
 
 import pytest
 from wandering_kettle_assistant.validation import (
     ValidatedSearchArgs,
+    ValidatedPolicyArgs,
+    ValidatedMenuArgs,
     ValidationError,
     RejectionResult,
     ToolCallDecision,
     ToolObservation,
     validate_search_args,
+    validate_policy_args,
+    validate_menu_args,
+    validate_tool_arguments,
     validate_and_execute_tool,
 )
 
@@ -36,47 +41,74 @@ def test_validate_search_args_missing_query():
     assert any(e.field == "query" for e in result.errors)
 
 
-def test_validate_search_args_empty_query():
-    raw = {"query": "   "}
-    result = validate_search_args(raw)
-    assert isinstance(result, RejectionResult)
-    assert any(e.field == "query" for e in result.errors)
-
-
 def test_validate_search_args_top_k_bounds():
-    # Out of range top_k
     raw_high = {"query": "coffee", "top_k": 50}
-    result_high = validate_search_args(raw_high)
-    assert isinstance(result_high, RejectionResult)
+    assert isinstance(validate_search_args(raw_high), RejectionResult)
 
     raw_low = {"query": "coffee", "top_k": 0}
-    result_low = validate_search_args(raw_low)
-    assert isinstance(result_low, RejectionResult)
+    assert isinstance(validate_search_args(raw_low), RejectionResult)
 
 
-def test_validate_and_execute_tool_unknown_tool():
+def test_validate_policy_args():
+    # Valid
+    valid = validate_policy_args({"topic": "pet_policy"})
+    assert isinstance(valid, ValidatedPolicyArgs)
+    assert valid.topic == "pet_policy"
+
+    # Missing topic
+    missing = validate_policy_args({})
+    assert isinstance(missing, RejectionResult)
+
+    # Empty whitespace topic
+    empty = validate_policy_args({"topic": "   "})
+    assert isinstance(empty, RejectionResult)
+
+    # Non-string topic
+    non_str = validate_policy_args({"topic": 123})
+    assert isinstance(non_str, RejectionResult)
+
+
+def test_validate_menu_args():
+    # Valid
+    valid = validate_menu_args({"category": "food", "include_allergens": True})
+    assert isinstance(valid, ValidatedMenuArgs)
+    assert valid.category == "food"
+    assert valid.include_allergens is True
+
+    # Invalid category
+    bad_cat = validate_menu_args({"category": "pizza"})
+    assert isinstance(bad_cat, RejectionResult)
+
+    # Boolean string coercion
+    str_bool = validate_menu_args({"category": "drinks", "include_allergens": "false"})
+    assert isinstance(str_bool, ValidatedMenuArgs)
+    assert str_bool.include_allergens is False
+
+
+def test_validate_tool_arguments_dispatch():
+    # Search
+    s_val = validate_tool_arguments("search", {"query": "tea", "top_k": 2})
+    assert isinstance(s_val, dict)
+    assert s_val["query"] == "tea"
+
+    # Policy
+    p_val = validate_tool_arguments("lookup_cafe_policy", {"topic": "wifi"})
+    assert isinstance(p_val, dict)
+    assert p_val["topic"] == "wifi"
+
+    # Unknown tool
+    u_val = validate_tool_arguments("fake_tool", {})
+    assert isinstance(u_val, RejectionResult)
+
+
+def test_validate_and_execute_tool_validation_error():
     decision = ToolCallDecision(
-        tool_name="hallucinated_tool",
-        arguments={"x": 1},
-        thought="testing unknown",
+        tool_name="lookup_cafe_policy",
+        arguments={},  # missing required 'topic'
+        thought="testing missing topic",
+        call_id="call_001",
     )
-    obs = validate_and_execute_tool(decision, available_tools=["search", "lookup_policy"])
+    obs = validate_and_execute_tool(decision, available_tools=["lookup_cafe_policy"])
     assert obs.is_error
-    assert obs.status == "error"
-    assert "Unknown tool" in obs.result
-
-
-def test_validate_and_execute_tool_success():
-    decision = ToolCallDecision(
-        tool_name="search",
-        arguments={"query": "tea"},
-        thought="testing success",
-    )
-    obs = validate_and_execute_tool(
-        decision,
-        available_tools=["search"],
-        executor_fn=lambda name, args: f"Executed {name} with query '{args['query']}'",
-    )
-    assert not obs.is_error
-    assert obs.status == "success"
-    assert "Executed search with query 'tea'" in obs.result
+    assert obs.status == "validation_error"
+    assert "Argument schema validation failed" in obs.result

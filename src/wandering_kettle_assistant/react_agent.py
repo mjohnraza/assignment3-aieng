@@ -1,5 +1,15 @@
-"""Iterative ReAct Agent for Wandering Kettle Café Assistant."""
+"""Iterative ReAct Agent for Wandering Kettle Café Assistant.
 
+Connects to the FastMCP Server via the MCP ClientSession protocol:
+User Question
+  -> Ollama LLM (Tool Selection & Thought)
+  -> Application Tool Executor (Validation)
+  -> MCP Client (ClientSession.call_tool())
+  -> MCP Server (ChromaDB Vector Retrieval & Policies)
+  -> Tool Observation with tool_call_id -> LLM -> Next Decision / Final Answer.
+"""
+
+import asyncio
 import json
 import os
 import re
@@ -9,20 +19,16 @@ import ollama
 
 from wandering_kettle_assistant.citations import Citation
 from wandering_kettle_assistant.llm_client import get_available_model
-from wandering_kettle_assistant.retrieval import (
-    lookup_policy,
-    search_knowledge_base,
-    search_menu,
-)
+from wandering_kettle_assistant.mcp_client import MCPClientManager
 from wandering_kettle_assistant.validation import (
     RejectionResult,
     ToolCallDecision,
     ToolObservation,
     validate_and_execute_tool,
-    validate_search_args,
+    validate_tool_arguments,
 )
 
-# Tool Schemas for Ollama function calling
+# Tool Schemas for Ollama function calling matching the MCP Server tools
 TOOLS_SCHEMA = [
     {
         "type": "function",
@@ -45,7 +51,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "search_menu",
-            "description": "Search café food, sandwiches, pastries, and drink items.",
+            "description": "Search café food, sandwiches, pastries, and drink items with allergen notes.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -67,7 +73,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "search",
-            "description": "General search of the café knowledge base for menu items, allergens, brewing, hours, seating policies, Wi-Fi, etc.",
+            "description": "General semantic search of the café knowledge base for menu items, allergens, brewing, hours, seating policies, Wi-Fi, etc.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -90,48 +96,29 @@ TOOLS_SCHEMA = [
 AVAILABLE_TOOL_NAMES = ["lookup_cafe_policy", "search_menu", "search"]
 
 SYSTEM_PROMPT = """You are a helpful and honest knowledge assistant for "The Wandering Kettle" café.
-Answer user requests by reasoning through what information is needed, calling external tools iteratively, and stopping only when you have gathered sufficient evidence.
+Answer user requests by reasoning through what information is needed, calling external tools iteratively via the Model Context Protocol (MCP), and stopping only when you have gathered sufficient evidence.
 
 CRITICAL GUIDELINES:
 1. Reason before acting: State what information is needed and which tool to query next.
 2. Multi-step queries: If the user asks about multiple aspects (e.g. pet policy, food menu, AND allergies), inspect each aspect with a corresponding tool call before providing the final answer.
 3. Grounding & Citations: Ground your response strictly on retrieved evidence. Quote policies and menu items directly from observations.
-4. Distinguish confirmed from unconfirmed/missing: If a detail (like cats specifically) is not mentioned in the policy (e.g. if the policy only mentions dogs and assistance animals), explicitly highlight that distinction rather than assuming or inventing.
+4. Distinguish confirmed from unconfirmed/missing: If a detail (like cats specifically) is not mentioned in the policy (e.g. if the policy only mentions dogs and assistance animals on the terrace), explicitly highlight that distinction rather than assuming or inventing.
 5. Final Answer: Output a comprehensive, structured response once all information is verified.
 """
 
 
-def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
-    """Dispatches the tool call to the local café knowledge retrieval functions."""
-    if name == "search":
-        val = validate_search_args(arguments)
-        if isinstance(val, RejectionResult):
-            errs = "; ".join(e.message for e in val.errors)
-            return f"Validation Error: {errs}"
-        return search_knowledge_base(query=val.query, top_k=val.top_k)
-
-    if name == "lookup_cafe_policy":
-        topic = arguments.get("topic", "")
-        if not topic:
-            return "Validation Error: 'topic' argument is required for lookup_cafe_policy."
-        return lookup_policy(topic=topic)
-
-    if name == "search_menu":
-        category = arguments.get("category", "all")
-        include_allergens = arguments.get("include_allergens", True)
-        return search_menu(category=category, include_allergens=include_allergens)
-
-    raise ValueError(f"Unknown tool: '{name}'")
-
-
 class ReActAgent:
     """
-    Explicit Iterative ReAct Agent:
-    Loop: while steps < max_steps:
+    Production Iterative ReAct Agent:
+    Connects to the MCP server through an MCP ClientSession.
+
+    Loop structure:
+    while steps < max_steps:
       1. ask_llm(messages, available_tools) -> decision
       2. if decision is final_answer -> return
-      3. execute_selected_mcp_tool(decision) -> observation
-      4. messages += [tool_call, tool_result]
+      3. validate arguments against schema
+      4. execute_selected_mcp_tool(decision) via ClientSession.call_tool()
+      5. messages += [tool_call, tool_result_with_id]
     """
 
     def __init__(
@@ -139,129 +126,197 @@ class ReActAgent:
         model_name: Optional[str] = None,
         max_steps: int = 6,
         available_tools: Optional[List[str]] = None,
+        mcp_client: Optional[MCPClientManager] = None,
     ):
         self.model_name = model_name or get_available_model()
         self.max_steps = max_steps
         self.available_tools = available_tools or AVAILABLE_TOOL_NAMES
+        self.mcp_client = mcp_client
 
-    def run(self, user_question: str) -> Dict[str, Any]:
-        """Execute the iterative ReAct loop until completion or max_steps reached."""
-        steps = 0
-        messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_question},
-        ]
-        trace: List[Dict[str, Any]] = []
+    async def arun(
+        self,
+        user_question: str,
+        mcp_client: Optional[MCPClientManager] = None,
+    ) -> Dict[str, Any]:
+        """Execute the asynchronous ReAct loop connecting to the MCP Server."""
+        client = mcp_client or self.mcp_client
+        created_client = False
 
-        print(f"\n[Starting ReAct Agent with Model: {self.model_name}]")
-        print(f"Goal: {user_question}\n")
+        if client is None:
+            client = MCPClientManager()
+            await client.connect()
+            created_client = True
 
-        while steps < self.max_steps:
-            steps += 1
-            print(f"{'=' * 30} ITERATION {steps} {'=' * 30}")
+        try:
+            steps = 0
+            messages: List[Dict[str, Any]] = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_question},
+            ]
+            trace: List[Dict[str, Any]] = []
 
-            # Step 1: Ask LLM with tools
-            response = ollama.chat(
+            print(f"\n[Starting ReAct Agent with Model: {self.model_name}]")
+            print(f"Goal: {user_question}\n")
+
+            while steps < self.max_steps:
+                steps += 1
+                print(f"{'=' * 30} ITERATION {steps} {'=' * 30}")
+
+                # Step 1: Query LLM with exposed tool declarations
+                response = ollama.chat(
+                    model=self.model_name,
+                    messages=messages,
+                    tools=TOOLS_SCHEMA,
+                    options={"temperature": 0.1},
+                )
+                msg = response["message"]
+                thought_text = msg.get("content", "").strip()
+                tool_calls = msg.get("tool_calls")
+
+                print(f"[Reasoning/Thought]:\n{thought_text if thought_text else '(Direct tool selection)'}\n")
+
+                # Stopping Condition: If no tool calls were requested, LLM completed synthesis
+                if not tool_calls:
+                    print(">> [Decision]: Sufficient evidence gathered. Returning Final Answer.\n")
+                    trace.append({
+                        "step": steps,
+                        "thought": thought_text,
+                        "action": "final_answer",
+                        "final_answer": thought_text,
+                    })
+                    return {
+                        "question": user_question,
+                        "status": "completed",
+                        "iterations": steps,
+                        "trace": trace,
+                        "final_answer": thought_text,
+                    }
+
+                # LLM selected tool calls
+                messages.append(msg)
+
+                for call_idx, call in enumerate(tool_calls, start=1):
+                    func = call["function"] if isinstance(call, dict) else getattr(call, "function", call)
+                    tool_name = func["name"] if isinstance(func, dict) else getattr(func, "name", str(func))
+                    raw_args = func["arguments"] if isinstance(func, dict) else getattr(func, "arguments", {})
+                    call_id = getattr(call, "id", None) or (call.get("id") if isinstance(call, dict) else f"call_{steps}_{call_idx:02d}")
+
+                    if isinstance(raw_args, str):
+                        try:
+                            arguments = json.loads(raw_args)
+                        except Exception:
+                            arguments = {"query": raw_args}
+                    else:
+                        arguments = raw_args
+
+                    # Normalize alias names if needed
+                    if tool_name == "search_cafe_knowledge_base":
+                        tool_name = "search"
+
+                    decision = ToolCallDecision(
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        thought=thought_text,
+                        call_id=call_id,
+                    )
+
+                    print(f"[Action]: {tool_name}")
+                    print(f"[Action Input]: {json.dumps(arguments, indent=2)}")
+
+                    # Step 2: Validate against schema
+                    val_result = validate_tool_arguments(tool_name, arguments)
+
+                    if isinstance(val_result, RejectionResult):
+                        obs_text = f"Error: Validation failed: {val_result.error_message()}"
+                        observation = ToolObservation(
+                            tool_name=tool_name,
+                            status="validation_error",
+                            result=obs_text,
+                            is_error=True,
+                            call_id=call_id,
+                        )
+                    elif tool_name not in self.available_tools:
+                        obs_text = f"Error: Unknown tool '{tool_name}'. Available: {self.available_tools}"
+                        observation = ToolObservation(
+                            tool_name=tool_name,
+                            status="error",
+                            result=obs_text,
+                            is_error=True,
+                            call_id=call_id,
+                        )
+                    else:
+                        # Step 3: Execute across MCP Client Transport
+                        clean_args = val_result
+                        print(f" -> Invoking MCP Server tool '{tool_name}' via ClientSession.call_tool()...")
+                        try:
+                            mcp_result = await client.call_tool(tool_name, clean_args)
+                            observation = ToolObservation(
+                                tool_name=tool_name,
+                                status="success",
+                                result=mcp_result,
+                                is_error=False,
+                                call_id=call_id,
+                            )
+                        except Exception as exc:
+                            observation = ToolObservation(
+                                tool_name=tool_name,
+                                status="error",
+                                result=f"MCP invocation error: {exc}",
+                                is_error=True,
+                                call_id=call_id,
+                            )
+
+                    print(f"[Observation - Status: {observation.status}]:")
+                    preview = str(observation.result).strip().splitlines()
+                    for line in preview[:5]:
+                        print(f"    {line}")
+                    if len(preview) > 5:
+                        print(f"    ... ({len(preview) - 5} lines truncated)")
+                    print()
+
+                    # Step 4: Append tool result with explicit name and tool_call_id
+                    messages.append({
+                        "role": "tool",
+                        "name": tool_name,
+                        "tool_call_id": call_id,
+                        "content": str(observation.result),
+                    })
+
+                    trace.append({
+                        "step": steps,
+                        "call_id": call_id,
+                        "thought": thought_text,
+                        "action": tool_name,
+                        "arguments": arguments,
+                        "observation_status": observation.status,
+                        "observation_preview": str(observation.result)[:250],
+                    })
+
+            # Safeguard: Max steps reached
+            print(">> [Safeguard]: Max iterations reached. Prompting LLM for grounded final synthesis.\n")
+            messages.append({
+                "role": "user",
+                "content": "You have reached the maximum step limit. Synthesize your final answer now based solely on the retrieved evidence above. Distinguish confirmed from missing facts.",
+            })
+            final_call = ollama.chat(
                 model=self.model_name,
                 messages=messages,
-                tools=TOOLS_SCHEMA,
                 options={"temperature": 0.1},
             )
-            msg = response["message"]
-            thought_text = msg.get("content", "").strip()
-            tool_calls = msg.get("tool_calls")
+            final_answer = final_call["message"]["content"].strip()
 
-            print(f"[Reasoning/Thought]:\n{thought_text if thought_text else '(Direct tool selection)'}\n")
+            return {
+                "question": user_question,
+                "status": "max_steps_reached",
+                "iterations": steps,
+                "trace": trace,
+                "final_answer": final_answer,
+            }
 
-            # Stopping Condition: If no tool calls were made, LLM decided it has enough evidence
-            if not tool_calls:
-                print(">> [Decision]: Sufficient evidence gathered. Returning Final Answer.\n")
-                trace.append({
-                    "step": steps,
-                    "thought": thought_text,
-                    "action": "final_answer",
-                    "final_answer": thought_text,
-                })
-                return {
-                    "question": user_question,
-                    "status": "completed",
-                    "iterations": steps,
-                    "trace": trace,
-                    "final_answer": thought_text,
-                }
+        finally:
+            if created_client:
+                await client.close()
 
-            # LLM decided to take an Action
-            messages.append(msg)
-
-            for call in tool_calls:
-                func = call["function"] if isinstance(call, dict) else getattr(call, "function", call)
-                tool_name = func["name"] if isinstance(func, dict) else getattr(func, "name", str(func))
-                raw_args = func["arguments"] if isinstance(func, dict) else getattr(func, "arguments", {})
-
-                if isinstance(raw_args, str):
-                    try:
-                        arguments = json.loads(raw_args)
-                    except Exception:
-                        arguments = {"query": raw_args}
-                else:
-                    arguments = raw_args
-
-                decision = ToolCallDecision(
-                    tool_name=tool_name,
-                    arguments=arguments,
-                    thought=thought_text,
-                )
-
-                print(f"[Action]: {tool_name}")
-                print(f"[Action Input]: {json.dumps(arguments, indent=2)}")
-
-                # Step 2: Validate and execute tool
-                observation: ToolObservation = validate_and_execute_tool(
-                    decision=decision,
-                    available_tools=self.available_tools,
-                    executor_fn=execute_tool,
-                )
-
-                print(f"[Observation - Status: {observation.status}]:")
-                preview = str(observation.result).strip().splitlines()
-                for line in preview[:5]:
-                    print(f"    {line}")
-                if len(preview) > 5:
-                    print(f"    ... ({len(preview) - 5} lines truncated)")
-                print()
-
-                # Step 3: Append observation back into conversation history
-                messages.append({
-                    "role": "tool",
-                    "content": str(observation.result),
-                })
-
-                trace.append({
-                    "step": steps,
-                    "thought": thought_text,
-                    "action": tool_name,
-                    "arguments": arguments,
-                    "observation_status": observation.status,
-                    "observation_preview": str(observation.result)[:250],
-                })
-
-        # Safeguard: Maximum steps reached
-        print(">> [Safeguard]: Max iterations reached. Prompting LLM for grounded final synthesis.\n")
-        messages.append({
-            "role": "user",
-            "content": "You have reached the maximum step limit. Synthesize your final answer now based solely on the retrieved evidence above. Distinguish confirmed from missing facts.",
-        })
-        final_call = ollama.chat(
-            model=self.model_name,
-            messages=messages,
-            options={"temperature": 0.1},
-        )
-        final_answer = final_call["message"]["content"].strip()
-
-        return {
-            "question": user_question,
-            "status": "max_steps_reached",
-            "iterations": steps,
-            "trace": trace,
-            "final_answer": final_answer,
-        }
+    def run(self, user_question: str) -> Dict[str, Any]:
+        """Synchronous runner for the ReAct Agent."""
+        return asyncio.run(self.arun(user_question))

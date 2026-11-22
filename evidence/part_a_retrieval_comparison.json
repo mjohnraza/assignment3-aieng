@@ -1,6 +1,18 @@
 {
   "embedding_model": "intfloat/multilingual-e5-small",
   "top_k": 3,
+  "aggregate_metrics": {
+    "baseline": {
+      "mean_precision_at_k": 0.945,
+      "mean_recall_at_k": 0.917,
+      "mean_reciprocal_rank": 1.0
+    },
+    "overlapping": {
+      "mean_precision_at_k": 0.778,
+      "mean_recall_at_k": 1.0,
+      "mean_reciprocal_rank": 1.0
+    }
+  },
   "experiments": {
     "baseline": {
       "1": {
@@ -9,6 +21,12 @@
         "expected_sources": [
           "hours_access.txt"
         ],
+        "relevance_criteria": "Must state Saturday (9:00-22:00) and Sunday (9:00-17:00) operating hours.",
+        "metrics": {
+          "precision_at_k": 0.667,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "hours_access.txt_chunk_8",
@@ -39,7 +57,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Relevant: Baseline single-line chunk retrieves the exact Saturday and Sunday hours row from hours_access.txt."
       },
       "2": {
         "topic": "Outdoor seating and pets",
@@ -47,6 +65,12 @@
         "expected_sources": [
           "faq.txt"
         ],
+        "relevance_criteria": "Must specify that dogs are welcome on the outdoor terrace but prohibited inside.",
+        "metrics": {
+          "precision_at_k": 1.0,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "faq.txt_chunk_25",
@@ -77,7 +101,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Partially Relevant / Fragmented: Baseline retrieves disconnected FAQ lines at rank 1 before the animal policy line, resulting in lower ranking precision."
       },
       "3": {
         "topic": "Plant-based food",
@@ -86,6 +110,12 @@
           "allergens.txt",
           "menu_food.txt"
         ],
+        "relevance_criteria": "Must identify plant-based items like roasted vegetable sandwich or rice porridge without dairy.",
+        "metrics": {
+          "precision_at_k": 1.0,
+          "recall_at_k": 0.5,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "allergens.txt_chunk_20",
@@ -116,7 +146,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Incomplete: Single lines lack surrounding context explaining that the vegetable sandwich is completely dairy-free."
       },
       "4": {
         "topic": "Working environment",
@@ -124,6 +154,12 @@
         "expected_sources": [
           "faq.txt"
         ],
+        "relevance_criteria": "Must mention laptop policies, kettle-guest Wi-Fi, or outlet locations (window bench/bookshelf).",
+        "metrics": {
+          "precision_at_k": 1.0,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "faq.txt_chunk_6",
@@ -154,7 +190,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Partially Relevant: Line-level chunking separates the laptop curfew note from the power outlet socket locations."
       },
       "5": {
         "topic": "Food allergies",
@@ -162,6 +198,12 @@
         "expected_sources": [
           "allergens.txt"
         ],
+        "relevance_criteria": "Must note absence of gluten-free bread and identify porridge/soup as safe alternatives.",
+        "metrics": {
+          "precision_at_k": 1.0,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "allergens.txt_chunk_11",
@@ -192,7 +234,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Incomplete: Single line 'WITHOUT WHEAT' lacks the following qualifying lines detailing cross-contamination and porridge safety."
       },
       "6": {
         "topic": "Semantic search example",
@@ -200,6 +242,12 @@
         "expected_sources": [
           "menu_drinks.txt"
         ],
+        "relevance_criteria": "Must retrieve warm beverage options like Assam milk tea, chamomile, or drinking chocolate.",
+        "metrics": {
+          "precision_at_k": 1.0,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "menu_drinks.txt_chunk_10",
@@ -230,7 +278,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Relevant: Successfully retrieves warm drink item lines, but lacks brewing and size context."
       }
     },
     "overlapping": {
@@ -240,6 +288,12 @@
         "expected_sources": [
           "hours_access.txt"
         ],
+        "relevance_criteria": "Must state Saturday (9:00-22:00) and Sunday (9:00-17:00) operating hours.",
+        "metrics": {
+          "precision_at_k": 0.333,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "hours_access.txt_chunk_0",
@@ -270,7 +324,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Highly Relevant: Rank 1 passage preserves the complete weekly schedule block along with holiday and closing notes."
       },
       "2": {
         "topic": "Outdoor seating and pets",
@@ -278,6 +332,12 @@
         "expected_sources": [
           "faq.txt"
         ],
+        "relevance_criteria": "Must specify that dogs are welcome on the outdoor terrace but prohibited inside.",
+        "metrics": {
+          "precision_at_k": 1.0,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "faq.txt_chunk_4",
@@ -308,7 +368,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Highly Relevant: Rank 1 chunk directly captures the full ANIMALS policy section: terrace permission, indoor prohibition, and water bowl availability."
       },
       "3": {
         "topic": "Plant-based food",
@@ -317,6 +377,12 @@
           "allergens.txt",
           "menu_food.txt"
         ],
+        "relevance_criteria": "Must identify plant-based items like roasted vegetable sandwich or rice porridge without dairy.",
+        "metrics": {
+          "precision_at_k": 1.0,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "allergens.txt_chunk_4",
@@ -347,7 +413,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Highly Relevant: Captures the full 'WITHOUT ANIMAL PRODUCTS' section with explicit dish listings and preparation notes."
       },
       "4": {
         "topic": "Working environment",
@@ -355,6 +421,12 @@
         "expected_sources": [
           "faq.txt"
         ],
+        "relevance_criteria": "Must mention laptop policies, kettle-guest Wi-Fi, or outlet locations (window bench/bookshelf).",
+        "metrics": {
+          "precision_at_k": 1.0,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "faq.txt_chunk_1",
@@ -385,7 +457,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Highly Relevant: Preserves contiguous paragraphs covering laptop policy, 'kettle-guest' credentials, and the 8 electrical socket locations."
       },
       "5": {
         "topic": "Food allergies",
@@ -393,6 +465,12 @@
         "expected_sources": [
           "allergens.txt"
         ],
+        "relevance_criteria": "Must note absence of gluten-free bread and identify porridge/soup as safe alternatives.",
+        "metrics": {
+          "precision_at_k": 0.667,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "allergens.txt_chunk_2",
@@ -423,7 +501,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Highly Relevant: Full paragraph provides comprehensive allergen warnings, absence of gluten-free bread, and shared kitchen cross-contact warnings."
       },
       "6": {
         "topic": "Semantic search example",
@@ -431,6 +509,12 @@
         "expected_sources": [
           "menu_drinks.txt"
         ],
+        "relevance_criteria": "Must retrieve warm beverage options like Assam milk tea, chamomile, or drinking chocolate.",
+        "metrics": {
+          "precision_at_k": 0.667,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0
+        },
         "retrieved": [
           {
             "id": "menu_drinks.txt_chunk_4",
@@ -461,7 +545,7 @@
           }
         ],
         "expected_source_found": true,
-        "manual_relevance_assessment": ""
+        "manual_relevance_assessment": "Highly Relevant: Retrieves rich context on hot teas, seasonal single origins, and thick drinking chocolate with full pricing."
       }
     }
   }
