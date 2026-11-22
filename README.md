@@ -105,18 +105,19 @@ Run all steps using `uv run python <path>`:
 | :--- | :---: | :---: | :--- |
 | **Source Recall@3** | 0.917 | **1.000** | Perfect source coverage: all relevant policy documents captured in top-3. |
 | **Source Precision@3** | **0.945** | 0.778 | Baseline matches isolated lines; overlapping windows include contiguous sentences. |
-| **Passage Recall@3** | 0.750 | **1.000** | Overlapping chunks guarantee all necessary information sources have answering passages. |
-| **Passage Precision@3**| 0.389 | **0.611** | Overlapping chunks provide higher factual answer density (+57% improvement). |
-| **Mean Reciprocal Rank** | 0.667 | **1.000** | First relevant answer rank is preserved at rank 1 across all queries. |
+| **Passage Recall@3** | 0.750 | **1.000** | Overlapping chunks guarantee all target ground-truth evidence passages are retrieved. |
+| **Passage Precision@3**| 0.278 | **0.389** | Deduplicated ground-truth evidence density (+40% improvement without chunk inflation). |
+| **Source Coverage Recall**| 0.750 | **1.000** | 100% of expected source documents contain verified answering evidence in top-3. |
+| **Mean Reciprocal Rank** | 0.667 | **1.000** | First relevant ground-truth evidence rank is preserved at rank 1 across all queries. |
 
-> **Key Trade-off:** Overlapping chunking trades off raw source precision for complete contextual recall and contiguous semantic paragraphs. In safety-critical café RAG (e.g. allergen warnings and pet restrictions), preventing split-sentence truncation is prioritized over raw line precision. Evidence is serialized in `evidence/part_a_retrieval_comparison.json`.
+> **Ground-Truth Deduplication:** Ground-truth passages are annotated with stable unique IDs (`gt_hours_weekend`, `gt_animals_terrace`, etc.). Overlapping chunks covering the same evidence passage are strictly deduplicated prior to computing passage recall and precision, ensuring metrics evaluate actual evidence coverage rather than chunk fragment inflation. Evidence is serialized in `evidence/part_a_retrieval_comparison.json`.
 
 ### Part B: MCP Fundamentals
-1. **Live Raw JSON-RPC 2.0 Protocol Exchange (Steps 6 & 7):**
+1. **Live Raw JSON-RPC 2.0 Protocol Exchange & Defensive Client (Steps 6 & 7):**
    ```bash
    uv run python steps/02_raw_jsonrpc.py
    ```
-   *Spawns `server.py` as a subprocess and performs an actual raw line-delimited JSON-RPC 2.0 handshake (`initialize`), notification (`notifications/initialized`), tool discovery (`tools/list`), and execution (`tools/call`).*
+   *Spawns `server.py` as a subprocess and performs an actual raw line-delimited JSON-RPC 2.0 handshake (`initialize`), notification (`notifications/initialized`), tool discovery (`tools/list`), and execution (`tools/call`). Uses `RobustRawJSONRPCClient` with explicit handling for invalid JSON, incorrect versions, mismatched IDs, server errors, unexpected process termination, timeouts, and `isError: true` responses, while isolating stdout protocol frames from stray server logs.*
 2. **MCP SDK Client & Server Exchange (Steps 8–11):**
    ```bash
    uv run python steps/02_mcp_client.py
@@ -129,7 +130,7 @@ uv run python steps/03_llm_rag.py
 ```
 - Implements the complete sequence: `User question → LLM tool decision → MCP Client invocation (ClientSession.call_tool()) → retrieved context → LLM response`.
 - Evaluates 5 café questions across diverse topics.
-- **Dual-Aspect Programmatic Negative Test Assertion:** Independently verifies that the assistant accurately distinguishes between confirmed absent amenities (`hours_access.txt` explicitly states: "We have no car park") and unmentioned/undocumented amenities (EV charging is completely unmentioned in café documentation), guarding against partial hallucinations and false availability claims.
+- **Epistemic Amenity Classification & Negative Test Assertion:** Rigorously distinguishes between confirmed available, confirmed absent (`hours_access.txt`: "We have no car park"), and undocumented/unmentioned amenities (EV charging is unmentioned in café documents). Prohibits treating bare "unavailable" as evidence of undocumented status.
 - **MCP Error Flag Inspection:** Inspects `result.is_error` / `result.isError` directly on MCP responses.
 
 ### Part D: Iterative ReAct Agent (Steps 16–20)
@@ -140,16 +141,15 @@ uv run python steps/04_react_agent.py
   > *"I’m planning to visit the café with my cat. Can I sit outside, what food options are available, and are there any allergy considerations I should know about?"*
 - Runs an explicit `while steps < MAX_STEPS:` loop in Python with tool calls executed strictly through the MCP client (`ClientSession.call_tool()`).
 - Maintains robust conversation history with `role: "tool"`, `name`, and `tool_call_id`.
-- **Application-Level Evidence Completeness Guard:** Intercepts premature LLM stops on multi-part queries (e.g., questions spanning pet policy, food menu, and allergens) when required facets lack retrieved evidence, prompting the agent to gather necessary documentation before concluding.
+- **Application-Level Evidence Completeness Guard:** Inspects actual successful tool observations (ignoring failed calls, tool names, or arguments) to verify required query facets. Intercepts premature stopping when facets remain unverified.
 - **Deterministic Safe-Stop Safeguard:** If maximum iterations are reached or evidence is incomplete, deterministically annotates the final output with a verified vs. unverified documentation notice, ensuring users are never misled.
 - **Duplicate-Call Safeguard:** Tracks executed `(tool, argument)` fingerprints across iterations and skips redundant identical calls.
 - **Defensive Schema Validation:** Robustly handles malformed non-dictionary inputs (`None`, `list`, primitives) across all validation functions.
 - **End-to-End Error Propagation:** Raises `RetrievalError` on vector search/ChromaDB exceptions, captured by FastMCP as `isError=True` and flagged in `ToolObservation.is_error`.
-- Validates arguments against schema prior to dispatch and propagates MCP error flags back to conversational history.
-- Emits citations and explicitly distinguishes confirmed facts (e.g. dogs permitted on outdoor terrace, assistance animals permitted everywhere, vegan & gluten-free food options) from unconfirmed details (e.g. cats specifically are unmentioned in policy).
+- Emits citations and explicitly distinguishes confirmed facts from unconfirmed details.
 
 ### Automated Testing & CI
-Run the complete test suite (28 passed):
+Run the complete test suite (43 passed):
 ```bash
 uv run pytest
 ```
@@ -159,15 +159,17 @@ platform win32 -- Python 3.12.10, pytest-9.2.0, pluggy-1.7.0
 rootdir: C:\Users\exam.DESKTOP-LNCC6CA\Desktop\AA3\wandering-kettle-assistant
 configfile: pyproject.toml
 plugins: anyio-4.16.0, asyncio-1.5.0
-collected 28 items
+collected 43 items
 
-tests\test_mcp_integration.py .....                                      [ 17%]
-tests\test_react_agent.py .........                                      [ 50%]
-tests\test_retrieval.py ....                                             [ 64%]
-tests\test_validation.py ..........                                      [100%]
+tests\test_mcp_integration.py .....                                      [ 11%]
+tests\test_raw_jsonrpc.py ........                                       [ 30%]
+tests\test_react_agent.py ..............                                 [ 62%]
+tests\test_retrieval.py .....                                            [ 74%]
+tests\test_validation.py ...........                                     [100%]
 
-============================= 28 passed in 47.38s =============================
+============================= 43 passed in 48.38s =============================
 ```
 
-- **Live MCP Server Integration Tests (`tests/test_mcp_integration.py`):** Spawns `server.py` over Stdio transport via `MCPClientManager` without mocks, verifying `initialize`, `tools/list`, and `tools/call` for `search`, `lookup_cafe_policy`, and `search_menu`.
-- **Continuous Integration (`.github/workflows/ci.yml`):** Automatically executes the test suite on Python 3.12 via GitHub Actions on every push and pull request.
+- **Live MCP Server Integration Tests (`tests/test_mcp_integration.py`):** Spawns `server.py` over Stdio transport via `MCPClientManager` without mocks, verifying `initialize`, `tools/list`, and `tools/call`.
+- **Defensive JSON-RPC Tests (`tests/test_raw_jsonrpc.py`):** Explicitly verifies protocol resilience against invalid JSON, protocol version mismatches, ID collisions, error payloads, process exits, and timeouts.
+- **Continuous Integration (`.github/workflows/ci.yml`):** Automated GitHub Actions CI workflow running `uv run pytest -v` on Python 3.12 with embedding model pre-caching.

@@ -339,19 +339,54 @@ def validate_and_execute_tool(
         )
 
 
-def verify_negative_response(response_text: str) -> Dict[str, Any]:
+def classify_amenity_status(response_text: str, amenity: str = "ev") -> str:
     """
-    Rigorously and independently verifies both facets of the unanswerable query:
-    1. Parking: Confirms the response explicitly notes that on-site/private parking is
-       unavailable or refers to the off-site coin lot (confirmed absent in hours_access.txt).
-    2. EV Charging: Confirms the response explicitly identifies that electric vehicle (EV)
-       charging is not mentioned or undocumented in café documentation (distinguishing
-       unmentioned amenities from confirmed-absent amenities).
-    Both must pass independently to prevent partial hallucinations.
+    Classify the epistemic status asserted for an amenity into three distinct categories:
+    - 'confirmed_available': Knowledge base confirms the facility exists.
+    - 'confirmed_unavailable': Knowledge base confirms the facility does NOT exist.
+    - 'undocumented': Knowledge base contains no information about the facility.
+    - 'unknown': Ambiguous or unaddressed.
     """
     lower = response_text.lower()
 
-    # Dimension 1: Parking status check (confirmed absent in hours_access.txt)
+    if amenity in ("ev", "electric_vehicle", "charging"):
+        # 1. Check positive availability claim
+        if any(kw in lower for kw in ["ev charging stations are available", "ev charging is available", "charging stations on site", "offers electric vehicle charging", "provides ev charging", "has ev charging"]):
+            return "confirmed_available"
+        # 2. Check undocumented / unmentioned
+        if any(kw in lower for kw in ["not mentioned", "no mention", "unmentioned", "not documented", "undocumented", "cannot be confirmed", "cannot confirm", "no information", "not found in the documentation", "documentation does not mention", "no record"]):
+            return "undocumented"
+        # 3. Check confirmed unavailable
+        if any(kw in lower for kw in ["ev charging is not provided", "no ev charging", "no electric vehicle charging", "ev charging is unavailable"]):
+            return "confirmed_unavailable"
+        return "unknown"
+
+    if amenity in ("parking", "car_park"):
+        if any(kw in lower for kw in ["dedicated customer parking is available", "parking is available", "free on-site customer parking", "has parking", "private car park on site"]):
+            return "confirmed_available"
+        if any(kw in lower for kw in ["no car park", "no private parking", "no customer parking", "no dedicated parking", "no parking", "parking is unavailable", "does not have parking", "coin lot behind the post office"]):
+            return "confirmed_unavailable"
+        if any(kw in lower for kw in ["parking is not mentioned", "parking is undocumented", "parking cannot be confirmed"]):
+            return "undocumented"
+        return "unknown"
+
+    return "unknown"
+
+
+def verify_negative_response(response_text: str) -> Dict[str, Any]:
+    """
+    Rigorously and independently verifies both facets of the unanswerable query:
+    1. Parking (Confirmed Unavailable): Confirms the response explicitly notes that on-site/private
+       parking does not exist (hours_access.txt explicitly confirms 'We have no car park') or directs
+       to the off-site coin lot.
+    2. EV Charging (Undocumented): Confirms the response explicitly identifies that electric vehicle
+       (EV) charging is NOT DOCUMENTED / UNMENTIONED / CANNOT BE CONFIRMED in café documentation.
+       Crucially, bare 'unavailable' is NOT treated as undocumented.
+    Both must pass independently to prevent partial hallucinations and epistemic mischaracterizations.
+    """
+    lower = response_text.lower()
+
+    # Dimension 1: Parking status check (ground truth: confirmed absent in hours_access.txt)
     parking_unavailable_signals = [
         "no car park",
         "no private parking",
@@ -363,6 +398,7 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
         "does not have parking",
         "parking is not available",
         "no parking available",
+        "parking is unavailable",
         "coin lot behind the post office",
         "closest option",
     ]
@@ -378,27 +414,22 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
     )
     parking_pass = parking_confirmed_unavailable and not parking_false_assertion
 
-    # Dimension 2: EV charging status check (unmentioned / undocumented in café documents)
+    # Dimension 2: EV charging status check (ground truth: undocumented in café documents)
+    # Strictly requires words indicating lack of documentation / mention / verification
     ev_undocumented_signals = [
         "not mentioned",
         "no mention",
         "unmentioned",
         "not documented",
         "undocumented",
+        "cannot be confirmed",
+        "cannot confirm",
         "no information",
         "not found in the documentation",
         "documentation does not mention",
-        "no record",
+        "no record of ev",
         "not referenced",
-        "no details",
-        "no ev charging",
-        "no electric vehicle charging",
-        "no electric vehicle",
-        "does not have ev",
-        "does not offer ev",
-        "ev charging is unavailable",
-        "ev charging is not",
-        "unavailable",
+        "unverified in",
     ]
     ev_confirmed_undocumented = any(sig in lower for sig in ev_undocumented_signals)
 
@@ -428,6 +459,8 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
             "parking_false_assertion": parking_false_assertion,
             "ev_signal_found": ev_confirmed_undocumented,
             "ev_false_assertion": ev_false_assertion,
+            "parking_classification": classify_amenity_status(response_text, "parking"),
+            "ev_classification": classify_amenity_status(response_text, "ev"),
         },
     }
 

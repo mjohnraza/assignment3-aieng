@@ -81,14 +81,22 @@ def test_react_agent_evidence_completeness_extractor():
     # Mock trace covering only pet_policy and food_menu
     trace = [
         {
-            "action": "lookup_cafe_policy",
+            "tool_name": "lookup_cafe_policy",
             "arguments": {"topic": "pet_policy"},
-            "observation_preview": "Dogs are welcome on the small terrace.",
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "Dogs are welcome on the small terrace.",
+            },
         },
         {
-            "action": "search_menu",
+            "tool_name": "search_menu",
             "arguments": {"category": "food"},
-            "observation_preview": "Ham and comte on baguette, roasted vegetable sandwich.",
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "Ham and comte on baguette, roasted vegetable sandwich.",
+            },
         },
     ]
 

@@ -255,9 +255,9 @@ async def run_pipeline():
         )
         assert verification["ev_pass"], (
             "CRITICAL: EV charging assertion failed! Assistant failed to state that EV charging "
-            f"is unavailable/unmentioned: {neg_result['final_answer']}"
+            f"availability is undocumented / not mentioned: {neg_result['final_answer']}"
         )
-        print(">> PROGRAMMATIC ASSERTIONS PASSED: Both parking and EV charging were independently verified as unavailable.")
+        print(">> PROGRAMMATIC ASSERTIONS PASSED: Parking was confirmed unavailable. EV charging availability was not documented.")
 
 
 def main():

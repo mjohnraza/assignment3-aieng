@@ -10,6 +10,10 @@ jobs:
   test:
     name: Automated Test Suite & Integration Verification
     runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
 
     steps:
       - name: Check out repository
@@ -27,6 +31,11 @@ jobs:
         run: |
           uv sync --frozen || uv sync
 
+      - name: Pre-download embedding model for tests
+        run: |
+          uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-small')"
+
       - name: Execute pytest test suite
         run: |
           uv run pytest -v
+

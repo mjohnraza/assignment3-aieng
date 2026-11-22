@@ -10,13 +10,26 @@ import subprocess
 import sys
 from pathlib import Path
 
+from wandering_kettle_assistant.raw_jsonrpc import (
+    RobustRawJSONRPCClient,
+    JSONRPCError,
+    JSONRPCParseError,
+    JSONRPCVersionError,
+    JSONRPCIdMismatchError,
+    JSONRPCResponseError,
+    ServerProcessTerminatedError,
+    JSONRPCTimeoutError,
+    MalformedToolResultError,
+    MCPToolExecutionError,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SERVER_SCRIPT = PROJECT_ROOT / "server.py"
 
 
 def run_raw_jsonrpc_exchange():
     print("=" * 80, flush=True)
-    print("PART B: LIVE RAW JSON-RPC 2.0 PROTOCOL EXCHANGE", flush=True)
+    print("PART B: LIVE RAW JSON-RPC 2.0 PROTOCOL EXCHANGE (DEFENSIVE CLIENT)", flush=True)
     print(f"Target Server Subprocess: {SERVER_SCRIPT}", flush=True)
     print("=" * 80, flush=True)
 
@@ -33,20 +46,18 @@ def run_raw_jsonrpc_exchange():
         env=env,
     )
 
-    def send_raw_request(req_payload: dict) -> dict:
+    client = RobustRawJSONRPCClient()
+
+    def send_raw_request(req_payload: dict, timeout: float = 10.0) -> dict:
+        req_id = req_payload.get("id")
         wire_str = json.dumps(req_payload) + "\n"
         print(f"\n[CLIENT -> SERVER (RAW WIRE JSON)]:\n{wire_str.strip()}", flush=True)
         proc.stdin.write(wire_str)
         proc.stdin.flush()
 
-        while True:
-            line = proc.stdout.readline()
-            if not line:
-                break
-            line = line.strip()
-            if line.startswith("{") and "jsonrpc" in line:
-                print(f"[SERVER -> CLIENT (RAW WIRE JSON)]:\n{line}", flush=True)
-                return json.loads(line)
+        response = client.read_next_jsonrpc_frame(proc, expected_id=req_id, timeout=timeout)
+        print(f"[SERVER -> CLIENT (VALIDATED JSON-RPC 2.0 FRAME)]:\n{json.dumps(response)}", flush=True)
+        return response
 
     try:
         # -------------------------------------------------------------------
@@ -121,6 +132,9 @@ def run_raw_jsonrpc_exchange():
         call_response = send_raw_request(call_request)
         print("\nParsed Tool Call Response:", flush=True)
         print(json.dumps(call_response, indent=2), flush=True)
+
+        extracted_text = client.extract_and_validate_tool_result(call_response)
+        print(f"\nExtracted and Validated Tool Content:\n{extracted_text}", flush=True)
 
     finally:
         proc.terminate()

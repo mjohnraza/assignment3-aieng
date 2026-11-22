@@ -1,8 +1,9 @@
 """ChromaDB knowledge retrieval service for Wandering Kettle café."""
 
 import os
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+if not os.environ.get("CI") and "HF_HUB_OFFLINE" not in os.environ:
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional

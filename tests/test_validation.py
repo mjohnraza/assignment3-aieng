@@ -128,29 +128,60 @@ def test_validation_non_dict_arguments():
 
 def test_verify_negative_response_safeguard():
     """Verify negative response assertion correctly distinguishes grounded absence from hallucinations."""
-    from wandering_kettle_assistant.validation import verify_negative_response
+    from wandering_kettle_assistant.validation import verify_negative_response, classify_amenity_status
 
-    # Grounded honest response: passes both
-    safe_text = "The café has no car park. EV charging is unavailable and not mentioned in café documentation."
+    # Case 1: Grounded honest response: parking confirmed unavailable, EV undocumented
+    safe_text = "The café has no car park. EV charging is not mentioned in café documentation and cannot be confirmed."
     res = verify_negative_response(safe_text)
     assert res["is_safe"] is True
     assert res["parking_pass"] is True
     assert res["ev_pass"] is True
+    assert res["details"]["parking_classification"] == "confirmed_unavailable"
+    assert res["details"]["ev_classification"] == "undocumented"
 
-    # Hallucination case 1: states parking absent but hallucinates EV charging on site
+    # Case 2: Hallucination case - states parking absent but hallucinates EV charging on site
     hallucination_ev = "The café has no car park, but EV charging stations are available on site."
     res_ev = verify_negative_response(hallucination_ev)
     assert res_ev["parking_pass"] is True
     assert res_ev["ev_pass"] is False
     assert res_ev["is_safe"] is False
+    assert res_ev["details"]["ev_classification"] == "confirmed_available"
 
-    # Hallucination case 2: states free customer parking is available
-    hallucination_parking = "Dedicated customer parking is available. There is no EV charging."
+    # Case 3: False positive parking - claims customer parking is available
+    hallucination_parking = "Dedicated customer parking is available. EV charging is not documented."
     res_p = verify_negative_response(hallucination_parking)
     assert res_p["parking_pass"] is False
     assert res_p["is_safe"] is False
+    assert res_p["details"]["parking_classification"] == "confirmed_available"
 
-    # Off-site coin lot mention passes
-    coin_lot_text = "There is a coin lot behind the post office, but no electric vehicle charging is offered."
+    # Case 4: Rejection of bare 'unavailable' as evidence of undocumented EV charging
+    # Merely saying EV charging is unavailable asserts confirmed absence rather than unmentioned status
+    bare_unavailable = "The café has no car park. EV charging is unavailable."
+    res_bare = verify_negative_response(bare_unavailable)
+    assert res_bare["parking_pass"] is True
+    assert res_bare["ev_pass"] is False  # Fails because undocumented phrasing is missing
+    assert res_bare["is_safe"] is False
+    assert res_bare["details"]["ev_classification"] == "confirmed_unavailable"
+
+    # Off-site coin lot with explicit unmentioned EV passes
+    coin_lot_text = "There is a coin lot behind the post office. Electric vehicle charging is unmentioned in café documents."
     res_coin = verify_negative_response(coin_lot_text)
     assert res_coin["is_safe"] is True
+    assert res_coin["details"]["parking_classification"] == "confirmed_unavailable"
+    assert res_coin["details"]["ev_classification"] == "undocumented"
+
+
+def test_classify_amenity_status_all_four_quadrants():
+    """Verify epistemic classification for available, unavailable, undocumented, and unknown."""
+    from wandering_kettle_assistant.validation import classify_amenity_status
+
+    # Parking tests
+    assert classify_amenity_status("Dedicated customer parking is available.", "parking") == "confirmed_available"
+    assert classify_amenity_status("The café has no parking.", "parking") == "confirmed_unavailable"
+    assert classify_amenity_status("Parking cannot be confirmed.", "parking") == "undocumented"
+
+    # EV charging tests
+    assert classify_amenity_status("EV charging stations are available on site.", "ev") == "confirmed_available"
+    assert classify_amenity_status("EV charging is not provided.", "ev") == "confirmed_unavailable"
+    assert classify_amenity_status("EV charging availability cannot be confirmed in the docs.", "ev") == "undocumented"
+

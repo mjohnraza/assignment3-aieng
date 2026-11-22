@@ -117,28 +117,88 @@ def check_evidence_coverage(
     facets: Dict[str, str],
     trace: List[Dict[str, Any]],
 ) -> Tuple[List[str], List[str]]:
-    """Determine which facets have retrieved evidence vs which remain unverified."""
+    """Determine which facets have retrieved evidence vs which remain unverified.
+
+    Evidence evaluation rules:
+    1. Ignore failed, timed-out, and malformed tool calls (is_error=True or execution_status != 'success').
+    2. Never count tool names or input arguments as retrieved evidence.
+    3. Inspect strictly the actual observation content of successful tool executions.
+    4. Check whether observation content contains factually relevant information for the facet.
+    5. Mark unsupported facets as missing.
+    """
     if not facets:
         return [], []
+
     covered: List[str] = []
     missing: List[str] = []
-    all_evidence = " ".join(
-        f"{t.get('action', '')} {json.dumps(t.get('arguments', {}))} {t.get('observation_preview', '')}".lower()
-        for t in trace
-    )
+
+    # 1. Filter strictly for successful observations without errors
+    successful_contents: List[str] = []
+    for t in trace:
+        # Check error status
+        is_err = t.get("is_error", False)
+        status = t.get("execution_status", t.get("observation_status", "error"))
+        if is_err or status != "success":
+            continue
+
+        # Extract actual observation content (never arguments or tool names)
+        obs = t.get("observation")
+        if isinstance(obs, dict) and "content" in obs:
+            content = obs["content"]
+        else:
+            content = t.get("result", t.get("observation_preview", ""))
+
+        if isinstance(content, str) and content.strip():
+            successful_contents.append(content.lower())
+
+    verified_corpus = " ".join(successful_contents)
+
+    # 2. Check each requested facet against actual successful observation content
     for facet_key, facet_desc in facets.items():
-        if facet_key == "pet_policy" and any(k in all_evidence for k in ["pet", "dog", "terrace", "animal", "outside"]):
-            covered.append(facet_desc)
-        elif facet_key == "food_menu" and any(k in all_evidence for k in ["menu", "food", "sandwich", "toast", "porridge", "slate"]):
-            covered.append(facet_desc)
-        elif facet_key == "allergens_diet" and any(k in all_evidence for k in ["allergen", "gluten", "wheat", "dairy", "plant", "nut", "animal products"]):
-            covered.append(facet_desc)
-        elif facet_key == "hours" and any(k in all_evidence for k in ["hour", "open", "monday", "saturday", "sunday"]):
-            covered.append(facet_desc)
-        elif facet_key == "work_wifi" and any(k in all_evidence for k in ["wifi", "kettle-guest", "socket", "laptop", "work"]):
+        is_facet_covered = False
+        if facet_key == "pet_policy":
+            # Must mention dogs / animals and terrace / outdoor seating rules
+            if (
+                ("dog" in verified_corpus or "animal" in verified_corpus)
+                and ("terrace" in verified_corpus or "outdoor" in verified_corpus or "stairs" in verified_corpus)
+            ):
+                is_facet_covered = True
+        elif facet_key == "food_menu":
+            # Must contain actual food menu items
+            if any(
+                item in verified_corpus
+                for item in ["sandwich", "baguette", "porridge", "toast", "soup", "hummus", "egg salad"]
+            ):
+                is_facet_covered = True
+        elif facet_key == "allergens_diet":
+            # Must contain allergen warnings or dietary specifications
+            if any(
+                term in verified_corpus
+                for term in ["gluten", "wheat", "dairy", "plant based", "peanut", "nut", "animal product", "without wheat"]
+            ):
+                is_facet_covered = True
+        elif facet_key == "hours":
+            # Must contain operating schedule details
+            if any(
+                day in verified_corpus for day in ["monday", "friday", "saturday", "sunday", "schedule"]
+            ) and any(
+                time_str in verified_corpus for time_str in ["8:00", "9:00", "18:00", "22:00", "17:00", "open", "closed"]
+            ):
+                is_facet_covered = True
+        elif facet_key == "work_wifi":
+            # Must contain laptop/work policy or wifi credentials
+            if (
+                "kettle-guest" in verified_corpus or "socket" in verified_corpus or "window bench" in verified_corpus
+            ) and (
+                "wifi" in verified_corpus or "laptop" in verified_corpus or "work" in verified_corpus
+            ):
+                is_facet_covered = True
+
+        if is_facet_covered:
             covered.append(facet_desc)
         else:
             missing.append(facet_desc)
+
     return covered, missing
 
 
@@ -391,8 +451,14 @@ class ReActAgent:
                         "call_id": call_id,
                         "thought": thought_text,
                         "action": tool_name,
+                        "tool_name": tool_name,
                         "arguments": arguments,
+                        "execution_status": observation.status,
+                        "is_error": observation.is_error,
                         "observation_status": observation.status,
+                        "observation": {
+                            "content": str(observation.result),
+                        },
                         "observation_preview": str(observation.result)[:250],
                     })
 

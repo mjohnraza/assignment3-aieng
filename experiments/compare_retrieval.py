@@ -8,8 +8,13 @@ Evaluates retrieval quality using both Source-Level and Passage-Level metrics:
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Callable, Dict, List
+
+if not os.environ.get("CI") and "HF_HUB_OFFLINE" not in os.environ:
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 import chromadb
 from chromadb.utils.embedding_functions import (
@@ -28,81 +33,120 @@ COLLECTIONS = {
     "overlapping": "cafe_knowledge_overlapping",
 }
 
-# Six evaluation queries covering core café facets
-# Six evaluation queries covering core café facets with expected ground truth sources & target passage counts
+# Manually annotated ground-truth dataset with unique, stable passage IDs
+GROUND_TRUTH_PASSAGES = {
+    "gt_hours_weekend": {
+        "passage_id": "gt_hours_weekend",
+        "source": "hours_access.txt",
+        "description": "Saturday 9:00 to 22:00 and Sunday 9:00 to 17:00 schedule",
+        "matcher": lambda text: (
+            ("saturday" in text.lower() or "sunday" in text.lower())
+            and ("9:00" in text.lower() or "22:00" in text.lower() or "17:00" in text.lower() or "open" in text.lower())
+        ),
+    },
+    "gt_animals_terrace": {
+        "passage_id": "gt_animals_terrace",
+        "source": "faq.txt",
+        "description": "Dogs welcome on small terrace at top of stairs, water bowl by door, not inside",
+        "matcher": lambda text: (
+            ("dog" in text.lower() or "animal" in text.lower())
+            and "terrace" in text.lower()
+            and ("welcome" in text.lower() or "stairs" in text.lower() or "water bowl" in text.lower())
+        ),
+    },
+    "gt_plant_based_sandwich": {
+        "passage_id": "gt_plant_based_sandwich",
+        "source": "allergens.txt",
+        "description": "Roasted vegetable and hummus sandwich and rice porridge fully plant-based without animal products",
+        "matcher": lambda text: (
+            ("plant based" in text.lower() or "without animal products" in text.lower() or "roasted vegetable" in text.lower())
+            and ("sandwich" in text.lower() or "porridge" in text.lower() or "hummus" in text.lower() or "soup" in text.lower())
+        ),
+    },
+    "gt_plant_based_menu": {
+        "passage_id": "gt_plant_based_menu",
+        "source": "menu_food.txt",
+        "description": "Roasted vegetable and hummus sandwich pricing and bread description",
+        "matcher": lambda text: "roasted vegetable and hummus" in text.lower() and ("$5.60" in text.lower() or "sandwiches" in text.lower()),
+    },
+    "gt_laptop_wifi_policy": {
+        "passage_id": "gt_laptop_wifi_policy",
+        "source": "faq.txt",
+        "description": "Laptops away Friday/Saturday after six; kettle-guest network and password; window bench sockets",
+        "matcher": lambda text: (
+            ("laptop" in text.lower() or "stay and work" in text.lower() or "kettle-guest" in text.lower() or "socket" in text.lower())
+            and ("wifi" in text.lower() or "wireless" in text.lower() or "outlet" in text.lower() or "bench" in text.lower() or "work" in text.lower())
+        ),
+    },
+    "gt_gluten_wheat_alternatives": {
+        "passage_id": "gt_gluten_wheat_alternatives",
+        "source": "allergens.txt",
+        "description": "No gluten free bread; rice porridge and soup usually safe",
+        "matcher": lambda text: (
+            ("gluten" in text.lower() or "without wheat" in text.lower())
+            and ("bread" in text.lower() or "porridge" in text.lower() or "soup" in text.lower())
+        ),
+    },
+    "gt_warm_winter_drinks": {
+        "passage_id": "gt_warm_winter_drinks",
+        "source": "menu_drinks.txt",
+        "description": "Drinking chocolate ($4.80) for freezing days, hot Assam with steamed milk ($3.60), chamomile with honey ($3.50)",
+        "matcher": lambda text: (
+            ("drinking chocolate" in text.lower() or "assam" in text.lower() or "chamomile" in text.lower() or "steamed milk" in text.lower())
+            and ("tea" in text.lower() or "chocolate" in text.lower() or "cup" in text.lower() or "drink" in text.lower())
+        ),
+    },
+}
+
+# Six evaluation queries covering core café facets with expected ground truth sources & passage IDs
 TEST_QUERIES = [
     {
         "id": 1,
         "topic": "Opening hours",
         "query": "What are the cafe opening hours on Saturday and Sunday?",
         "expected_sources": ["hours_access.txt"],
-        "target_passages": 1,
+        "expected_passage_ids": ["gt_hours_weekend"],
         "relevance_criteria": "Must state Saturday (9:00-22:00) and Sunday (9:00-17:00) operating hours.",
-        "passage_evaluator": lambda text: (
-            ("saturday" in text.lower() or "sunday" in text.lower())
-            and ("9:00" in text.lower() or "22:00" in text.lower() or "17:00" in text.lower() or "open" in text.lower())
-        ),
     },
     {
         "id": 2,
         "topic": "Outdoor seating and pets",
         "query": "Can I bring my dog and sit outside on the terrace?",
         "expected_sources": ["faq.txt"],
-        "target_passages": 1,
+        "expected_passage_ids": ["gt_animals_terrace"],
         "relevance_criteria": "Must specify that dogs are welcome on the outdoor terrace but prohibited inside.",
-        "passage_evaluator": lambda text: (
-            ("dog" in text.lower() or "animal" in text.lower())
-            and "terrace" in text.lower()
-            and ("welcome" in text.lower() or "stairs" in text.lower() or "water bowl" in text.lower())
-        ),
     },
     {
         "id": 3,
         "topic": "Plant-based food",
         "query": "Which food options are suitable for someone following a fully plant-based diet?",
         "expected_sources": ["allergens.txt", "menu_food.txt"],
-        "target_passages": 2,
+        "expected_passage_ids": ["gt_plant_based_sandwich", "gt_plant_based_menu"],
         "relevance_criteria": "Must identify plant-based items like roasted vegetable sandwich or rice porridge without dairy.",
-        "passage_evaluator": lambda text: (
-            ("plant based" in text.lower() or "without animal products" in text.lower() or "roasted vegetable" in text.lower())
-            and ("sandwich" in text.lower() or "porridge" in text.lower() or "hummus" in text.lower() or "soup" in text.lower())
-        ),
     },
     {
         "id": 4,
         "topic": "Working environment",
         "query": "Can I work on my laptop, and where can I find Wi-Fi and power sockets?",
         "expected_sources": ["faq.txt"],
-        "target_passages": 1,
+        "expected_passage_ids": ["gt_laptop_wifi_policy"],
         "relevance_criteria": "Must mention laptop policies, kettle-guest Wi-Fi, or outlet locations (window bench/bookshelf).",
-        "passage_evaluator": lambda text: (
-            ("laptop" in text.lower() or "stay and work" in text.lower() or "kettle-guest" in text.lower() or "socket" in text.lower())
-            and ("wifi" in text.lower() or "wireless" in text.lower() or "outlet" in text.lower() or "bench" in text.lower() or "work" in text.lower())
-        ),
     },
     {
         "id": 5,
         "topic": "Food allergies",
         "query": "Which menu items are suitable for someone avoiding wheat or gluten?",
         "expected_sources": ["allergens.txt"],
-        "target_passages": 1,
+        "expected_passage_ids": ["gt_gluten_wheat_alternatives"],
         "relevance_criteria": "Must note absence of gluten-free bread and identify porridge/soup as safe alternatives.",
-        "passage_evaluator": lambda text: (
-            ("gluten" in text.lower() or "without wheat" in text.lower())
-            and ("bread" in text.lower() or "porridge" in text.lower() or "soup" in text.lower())
-        ),
     },
     {
         "id": 6,
         "topic": "Semantic search example",
         "query": "I want something warm to drink because it is freezing outside.",
         "expected_sources": ["menu_drinks.txt"],
-        "target_passages": 1,
+        "expected_passage_ids": ["gt_warm_winter_drinks"],
         "relevance_criteria": "Must retrieve warm beverage options like Assam milk tea, chamomile, or drinking chocolate.",
-        "passage_evaluator": lambda text: (
-            ("drinking chocolate" in text.lower() or "assam" in text.lower() or "chamomile" in text.lower() or "steamed milk" in text.lower())
-            and ("tea" in text.lower() or "chocolate" in text.lower() or "cup" in text.lower() or "drink" in text.lower())
-        ),
     },
 ]
 
@@ -188,18 +232,18 @@ def retrieve(
 def calculate_metrics(
     results: List[Dict[str, Any]],
     expected_sources: List[str],
-    passage_evaluator: Callable[[str], bool],
-    target_passages: int = 1,
+    expected_passage_ids: List[str],
 ) -> Dict[str, float]:
     """
-    Calculate rigorous source-level and grounded passage-level precision, recall, and reciprocal rank.
+    Calculate rigorous source-level and ground-truth passage-level precision, recall, and reciprocal rank.
 
-    Methodological criteria:
-    - Grounded Passage Precision: A passage is considered relevant IF AND ONLY IF its source document
-      is among the expected ground truth sources AND its content satisfies the passage relevance criteria.
-    - Passage Recall@K: Proportion of target ground truth answering passages retrieved in top-K.
-    - Source Coverage Recall: Proportion of expected ground truth sources containing at least one answering passage.
-    - Reciprocal Rank (MRR): Inverse rank of the first grounded, factually relevant passage.
+    Methodological safeguards:
+    - Ground-Truth Passage Deduplication: Overlapping chunks mapping to the same ground-truth
+      passage_id are deduplicated before computing passage recall and precision, preventing inflation.
+    - Passage Precision@K: Proportion of top-K chunks that map to distinct target ground-truth passages.
+    - Passage Recall@K: Proportion of expected ground-truth evidence passages retrieved.
+    - Source Coverage Recall: Proportion of expected ground-truth sources with at least one matching passage.
+    - Reciprocal Rank (MRR): Inverse rank of the first chunk matching an expected ground-truth passage.
     """
     if not results:
         return {
@@ -213,34 +257,50 @@ def calculate_metrics(
 
     k = len(results)
 
-    # 1. Source-level metrics (proxy based on file matching)
+    # 1. Source-level metrics
     source_hits = [item for item in results if item["source"] in expected_sources]
     source_precision = len(source_hits) / k
     retrieved_sources = set(item["source"] for item in source_hits)
-    source_recall = len(retrieved_sources) / len(set(expected_sources))
+    source_recall = len(retrieved_sources) / len(set(expected_sources)) if expected_sources else 0.0
 
-    # 2. Grounded Passage-level metrics:
-    # A passage is factually relevant ONLY if its source is valid AND passage content answers the query
-    grounded_relevant_passages = [
-        item for item in results
-        if item["source"] in expected_sources and passage_evaluator(item["text"])
-    ]
-    passage_precision = len(grounded_relevant_passages) / k
+    # 2. Ground-truth passage matching with strict deduplication
+    retrieved_passage_ids_seen = set()
+    first_hit_rank = 0
 
-    # Standard passage-level recall: fraction of target answering passages retrieved
-    target_count = target_passages if target_passages > 0 else len(expected_sources)
-    passage_recall = min(1.0, len(grounded_relevant_passages) / target_count)
-
-    # Source coverage recall: proportion of expected documents with at least one verified answering passage
-    sources_with_relevant_passage = set(item["source"] for item in grounded_relevant_passages)
-    source_coverage_recall = len(sources_with_relevant_passage) / len(set(expected_sources))
-
-    # Reciprocal rank based on first grounded relevant passage
-    reciprocal_rank = 0.0
     for rank, item in enumerate(results, start=1):
-        if item["source"] in expected_sources and passage_evaluator(item["text"]):
-            reciprocal_rank = 1.0 / rank
-            break
+        chunk_matched_pid = None
+        for pid in expected_passage_ids:
+            gt = GROUND_TRUTH_PASSAGES.get(pid)
+            if gt and item["source"] == gt["source"] and gt["matcher"](item["text"]):
+                chunk_matched_pid = pid
+                break
+        if chunk_matched_pid:
+            retrieved_passage_ids_seen.add(chunk_matched_pid)
+            if first_hit_rank == 0:
+                first_hit_rank = rank
+
+    # Passage precision: proportion of top-K results contributing distinct ground-truth evidence
+    passage_precision = len(retrieved_passage_ids_seen) / k
+
+    # Passage recall: proportion of expected ground-truth passages successfully retrieved
+    passage_recall = (
+        len(retrieved_passage_ids_seen) / len(expected_passage_ids)
+        if expected_passage_ids else 0.0
+    )
+
+    # Source coverage recall: proportion of expected documents containing >= 1 answering passage
+    sources_with_relevant_passage = set(
+        GROUND_TRUTH_PASSAGES[pid]["source"]
+        for pid in retrieved_passage_ids_seen
+        if pid in GROUND_TRUTH_PASSAGES
+    )
+    source_coverage_recall = (
+        len(sources_with_relevant_passage) / len(set(expected_sources))
+        if expected_sources else 0.0
+    )
+
+    # Reciprocal rank
+    reciprocal_rank = (1.0 / first_hit_rank) if first_hit_rank > 0 else 0.0
 
     return {
         "source_precision_at_k": round(source_precision, 3),
@@ -301,8 +361,7 @@ def main() -> None:
             metrics = calculate_metrics(
                 results,
                 expected_sources,
-                test["passage_evaluator"],
-                target_passages=test.get("target_passages", 1),
+                test["expected_passage_ids"],
             )
 
             all_src_p.append(metrics["source_precision_at_k"])
@@ -316,13 +375,19 @@ def main() -> None:
             print(f"\nQ{query_id}: {test['topic']}")
             print(f"Query: {query}")
             print(f"Expected Sources: {expected_sources}")
-            print(f"Metrics: Source P@{TOP_K}={metrics['source_precision_at_k']} | Source R@{TOP_K}={metrics['source_recall_at_k']} | Passage P@{TOP_K}={metrics['passage_precision_at_k']} | RR={metrics['reciprocal_rank']}")
+            print(f"Expected Passage IDs: {test['expected_passage_ids']}")
+            print(f"Metrics: Source P@{TOP_K}={metrics['source_precision_at_k']} | Source R@{TOP_K}={metrics['source_recall_at_k']} | Passage P@{TOP_K}={metrics['passage_precision_at_k']} | Passage R@{TOP_K}={metrics['passage_recall_at_k']} | RR={metrics['reciprocal_rank']}")
             print(f"Manual Assessment: {assessment}")
 
             for rank, item in enumerate(results, start=1):
                 match = item["source"] in expected_sources
-                psg_match = test["passage_evaluator"](item["text"])
-                print(f"  [{rank}] Source: {item['source']} | Dist: {item['distance']:.4f} | SourceMatch: {match} | PassageMatch: {psg_match}")
+                matched_pid = None
+                for pid in test["expected_passage_ids"]:
+                    gt = GROUND_TRUTH_PASSAGES.get(pid)
+                    if gt and item["source"] == gt["source"] and gt["matcher"](item["text"]):
+                        matched_pid = pid
+                        break
+                print(f"  [{rank}] Source: {item['source']} | Dist: {item['distance']:.4f} | SourceMatch: {match} | GroundTruthPassage: {matched_pid}")
                 print(f"      Text: {item['text'][:120]}...")
 
             report["experiments"][label][str(query_id)] = {

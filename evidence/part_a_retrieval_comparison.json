@@ -8,14 +8,14 @@
     "baseline": {
       "source_mean_precision_at_k": 0.945,
       "source_mean_recall_at_k": 0.917,
-      "passage_mean_precision_at_k": 0.389,
+      "passage_mean_precision_at_k": 0.278,
       "passage_mean_recall_at_k": 0.75,
       "mean_reciprocal_rank": 0.667
     },
     "overlapping": {
       "source_mean_precision_at_k": 0.778,
       "source_mean_recall_at_k": 1.0,
-      "passage_mean_precision_at_k": 0.611,
+      "passage_mean_precision_at_k": 0.389,
       "passage_mean_recall_at_k": 1.0,
       "mean_reciprocal_rank": 1.0
     }
@@ -32,7 +32,7 @@
         "metrics": {
           "source_precision_at_k": 0.667,
           "source_recall_at_k": 1.0,
-          "passage_precision_at_k": 0.667,
+          "passage_precision_at_k": 0.333,
           "passage_recall_at_k": 1.0,
           "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
@@ -174,7 +174,7 @@
         "metrics": {
           "source_precision_at_k": 1.0,
           "source_recall_at_k": 1.0,
-          "passage_precision_at_k": 0.667,
+          "passage_precision_at_k": 0.333,
           "passage_recall_at_k": 1.0,
           "source_coverage_recall": 1.0,
           "reciprocal_rank": 0.5
@@ -412,7 +412,7 @@
         "metrics": {
           "source_precision_at_k": 1.0,
           "source_recall_at_k": 1.0,
-          "passage_precision_at_k": 1.0,
+          "passage_precision_at_k": 0.667,
           "passage_recall_at_k": 1.0,
           "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
@@ -459,7 +459,7 @@
         "metrics": {
           "source_precision_at_k": 1.0,
           "source_recall_at_k": 1.0,
-          "passage_precision_at_k": 1.0,
+          "passage_precision_at_k": 0.333,
           "passage_recall_at_k": 1.0,
           "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
@@ -553,7 +553,7 @@
         "metrics": {
           "source_precision_at_k": 0.667,
           "source_recall_at_k": 1.0,
-          "passage_precision_at_k": 0.667,
+          "passage_precision_at_k": 0.333,
           "passage_recall_at_k": 1.0,
           "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0

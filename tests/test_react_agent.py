@@ -284,3 +284,151 @@ async def test_react_agent_duplicate_call_safeguard():
     # The duplicate call in step 2 should NOT have hit MCP call_tool a second time
     assert mock_mcp.call_tool.call_count == 1
     assert any(t.get("observation_status") == "duplicate_skipped" for t in result["trace"])
+
+
+# ---------------------------------------------------------------------------
+# Part D: Five Evidence Verification & Edge-Case Tests
+# ---------------------------------------------------------------------------
+
+def test_evidence_checker_successful_pet_policy_accepted():
+    """Test 1: Successful pet-policy lookup is accepted as verified evidence."""
+    from wandering_kettle_assistant.react_agent import extract_query_facets, check_evidence_coverage
+
+    facets = extract_query_facets("Can I bring my dog on the outdoor terrace?")
+    assert "pet_policy" in facets
+
+    trace = [
+        {
+            "tool_name": "lookup_cafe_policy",
+            "arguments": {"topic": "pet_policy"},
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "Dogs are welcome on the small terrace at the top of the stairs, but not inside.",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage(facets, trace)
+    assert len(covered) == 1
+    assert "pet" in covered[0].lower() or "outdoor" in covered[0].lower()
+    assert len(missing) == 0
+
+
+def test_evidence_checker_failed_pet_policy_rejected():
+    """Test 2: Failed pet-policy lookup (is_error=True or execution_status='error') is strictly rejected."""
+    from wandering_kettle_assistant.react_agent import extract_query_facets, check_evidence_coverage
+
+    facets = extract_query_facets("Can I bring my dog on the outdoor terrace?")
+    assert "pet_policy" in facets
+
+    # Trace with an error observation
+    trace = [
+        {
+            "tool_name": "lookup_cafe_policy",
+            "arguments": {"topic": "pet_policy"},
+            "execution_status": "error",
+            "is_error": True,
+            "observation": {
+                "content": "Database error: connection to ChromaDB timed out.",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage(facets, trace)
+    assert len(covered) == 0
+    assert len(missing) == 1
+    assert "pet" in missing[0].lower() or "outdoor" in missing[0].lower()
+
+
+def test_evidence_checker_irrelevant_observation_rejected():
+    """Test 3: Successful tool execution returning irrelevant text is rejected."""
+    from wandering_kettle_assistant.react_agent import extract_query_facets, check_evidence_coverage
+
+    facets = extract_query_facets("Can I bring my dog on the outdoor terrace?")
+    assert "pet_policy" in facets
+
+    # Successful call, but returning Wi-Fi password instead of pet policy
+    trace = [
+        {
+            "tool_name": "lookup_cafe_policy",
+            "arguments": {"topic": "wifi"},
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "The network is kettle-guest and the password is on the coaster.",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage(facets, trace)
+    assert len(covered) == 0
+    assert len(missing) == 1
+
+
+def test_evidence_checker_multi_facet_partial_retrieval():
+    """Test 4: Multi-facet query with only one facet retrieved leaves the other facet missing."""
+    from wandering_kettle_assistant.react_agent import extract_query_facets, check_evidence_coverage
+
+    facets = extract_query_facets("Can I bring my dog outside, and what vegan options do you have?")
+    assert "pet_policy" in facets
+    assert "allergens_diet" in facets
+    assert "food_menu" not in facets
+
+    # Only pet policy was retrieved
+    trace = [
+        {
+            "tool_name": "lookup_cafe_policy",
+            "arguments": {"topic": "pet_policy"},
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "Dogs are welcome on the small terrace at the top of the stairs.",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage(facets, trace)
+    assert len(covered) == 1
+    assert len(missing) == 1
+    assert any("Allergen" in m or "diet" in m for m in missing)
+
+
+@pytest.mark.asyncio
+async def test_react_agent_max_iterations_refuses_unverified_claim():
+    """Test 5: Agent at max iterations with missing evidence includes deterministic safe-stop notice."""
+    mock_mcp = AsyncMock()
+    # Step 1 returns pet policy only
+    mock_mcp.call_tool.return_value = "Dogs are welcome on the small terrace."
+
+    agent = ReActAgent(max_steps=1, mcp_client=mock_mcp)
+
+    step1_call = {
+        "message": {
+            "content": "Checking terrace policy...",
+            "tool_calls": [
+                {
+                    "id": "call_pet_only",
+                    "function": {"name": "lookup_cafe_policy", "arguments": {"topic": "pet_policy"}},
+                }
+            ],
+        }
+    }
+
+    final_synth = {
+        "message": {
+            "content": "Dogs are allowed on the terrace.",
+        }
+    }
+
+    # Query asks for pet policy AND food menu AND gluten allergy
+    query = "Can I bring my dog outside, what food options are available, and what about gluten allergy?"
+
+    with patch("ollama.chat", side_effect=[step1_call, final_synth]):
+        result = await agent.arun(query, mcp_client=mock_mcp)
+
+    assert result["status"] == "max_steps_reached"
+    # Deterministic safeguard notice must be present indicating unverified aspects
+    assert "Deterministic Safeguard Notice" in result["final_answer"]
+    assert len(result["missing_facets"]) > 0
+
