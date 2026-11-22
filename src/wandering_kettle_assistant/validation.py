@@ -383,6 +383,9 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
        (EV) charging is NOT DOCUMENTED / UNMENTIONED / CANNOT BE CONFIRMED in café documentation.
        Crucially, bare 'unavailable' is NOT treated as undocumented.
     Both must pass independently to prevent partial hallucinations and epistemic mischaracterizations.
+
+    Additionally rejects contradictory responses where both undocumented AND confirmed-unavailable
+    signals are present for EV, as these are mutually exclusive epistemic states.
     """
     lower = response_text.lower()
 
@@ -433,6 +436,18 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
     ]
     ev_confirmed_undocumented = any(sig in lower for sig in ev_undocumented_signals)
 
+    # Confirmed-unavailable signals for EV (mutually exclusive with undocumented)
+    ev_confirmed_unavailable_signals = [
+        "ev charging is not provided",
+        "no ev charging",
+        "no electric vehicle charging",
+        "ev charging is unavailable",
+        "ev charging stations are not available",
+        "does not have ev charging",
+        "does not offer ev charging",
+    ]
+    ev_confirmed_unavailable = any(sig in lower for sig in ev_confirmed_unavailable_signals)
+
     # Broad detection of false availability claims for EV charging
     ev_false_assertion = (
         "ev charging stations are available" in lower
@@ -446,7 +461,11 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
         or "provides ev charging" in lower
         or "provides electric vehicle charging" in lower
     )
-    ev_pass = ev_confirmed_undocumented and not ev_false_assertion
+
+    # Contradiction detection: undocumented and confirmed-unavailable are mutually exclusive
+    ev_contradictory = ev_confirmed_undocumented and ev_confirmed_unavailable
+
+    ev_pass = ev_confirmed_undocumented and not ev_false_assertion and not ev_contradictory
 
     overall_safe = parking_pass and ev_pass
 
@@ -459,6 +478,7 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
             "parking_false_assertion": parking_false_assertion,
             "ev_signal_found": ev_confirmed_undocumented,
             "ev_false_assertion": ev_false_assertion,
+            "ev_contradictory": ev_contradictory,
             "parking_classification": classify_amenity_status(response_text, "parking"),
             "ev_classification": classify_amenity_status(response_text, "ev"),
         },

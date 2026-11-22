@@ -1,6 +1,11 @@
 """Unit tests for defensive raw JSON-RPC 2.0 protocol validation and error handling."""
 
 import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
 import pytest
 from unittest.mock import MagicMock
 
@@ -108,3 +113,53 @@ def test_server_process_termination_handling():
     with pytest.raises(ServerProcessTerminatedError) as exc_info:
         RobustRawJSONRPCClient.read_next_jsonrpc_frame(mock_proc, expected_id=1, timeout=1.0)
     assert "terminated" in str(exc_info.value).lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Real subprocess timeout test with thread+queue
+# ---------------------------------------------------------------------------
+
+def test_real_subprocess_timeout():
+    """Start a real subprocess that never writes stdout and verify JSONRPCTimeoutError
+    is raised within the specified timeout plus a tolerance window.
+
+    This proves the thread+queue pattern genuinely interrupts a blocking readline().
+    Works on both Windows and Linux.
+    """
+    # Create a tiny Python script that sleeps forever (never writes to stdout)
+    script_content = "import time\nwhile True:\n    time.sleep(60)\n"
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+        f.write(script_content)
+        script_path = f.name
+
+    timeout_seconds = 1.0
+    tolerance_seconds = 2.0  # generous tolerance for CI/slow machines
+
+    proc = subprocess.Popen(
+        [sys.executable, script_path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    try:
+        t0 = time.time()
+        with pytest.raises(JSONRPCTimeoutError):
+            RobustRawJSONRPCClient.read_next_jsonrpc_frame(
+                proc, expected_id=1, timeout=timeout_seconds
+            )
+        elapsed = time.time() - t0
+
+        # Timeout must fire within timeout + tolerance (not block forever)
+        assert elapsed < timeout_seconds + tolerance_seconds, (
+            f"Timeout took {elapsed:.2f}s but should have fired within {timeout_seconds + tolerance_seconds:.1f}s"
+        )
+        # Must have waited at least close to the timeout
+        assert elapsed >= timeout_seconds * 0.8, (
+            f"Timeout fired too early at {elapsed:.2f}s (expected >= {timeout_seconds * 0.8:.1f}s)"
+        )
+    finally:
+        proc.kill()
+        proc.wait()
+        os.unlink(script_path)

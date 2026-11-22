@@ -185,3 +185,41 @@ def test_classify_amenity_status_all_four_quadrants():
     assert classify_amenity_status("EV charging is not provided.", "ev") == "confirmed_unavailable"
     assert classify_amenity_status("EV charging availability cannot be confirmed in the docs.", "ev") == "undocumented"
 
+
+# ---------------------------------------------------------------------------
+# Phase 3: Contradictory amenity classification
+# ---------------------------------------------------------------------------
+
+def test_ev_contradictory_response_rejected():
+    """A response claiming EV charging is BOTH undocumented AND unavailable must be rejected."""
+    from wandering_kettle_assistant.validation import verify_negative_response
+
+    contradictory_text = (
+        "The café has no car park. "
+        "EV charging is not mentioned in the café documentation. "
+        "No ev charging is available."
+    )
+    res = verify_negative_response(contradictory_text)
+    assert res["ev_pass"] is False, "Contradictory EV (undocumented + unavailable) must fail"
+    assert res["details"]["ev_contradictory"] is True
+    assert res["is_safe"] is False
+
+
+def test_negated_ev_phrase_not_misinterpreted():
+    """Phrases like 'no mention of ev charging' should be undocumented, not confirmed unavailable."""
+    from wandering_kettle_assistant.validation import classify_amenity_status
+
+    text = "There is no mention of ev charging in the café documents."
+    status = classify_amenity_status(text, "ev")
+    assert status == "undocumented"
+
+
+def test_correct_parking_wrong_ev_classification():
+    """Correct parking (unavailable) but wrong EV (confirmed unavailable instead of undocumented)."""
+    from wandering_kettle_assistant.validation import verify_negative_response
+
+    text = "The café has no car park. EV charging is not provided."
+    res = verify_negative_response(text)
+    assert res["parking_pass"] is True
+    assert res["ev_pass"] is False  # undocumented signal is missing
+    assert res["is_safe"] is False

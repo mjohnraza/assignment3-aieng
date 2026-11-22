@@ -4,7 +4,14 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from wandering_kettle_assistant.llm_client import parse_react_response
-from wandering_kettle_assistant.react_agent import ReActAgent
+from wandering_kettle_assistant.react_agent import (
+    ReActAgent,
+    extract_query_facets,
+    check_evidence_coverage,
+    _extract_constraints,
+    check_evidence_coverage_with_constraints,
+    QueryConstraint,
+)
 from wandering_kettle_assistant.validation import ToolCallDecision, ToolObservation
 
 
@@ -287,13 +294,11 @@ async def test_react_agent_duplicate_call_safeguard():
 
 
 # ---------------------------------------------------------------------------
-# Part D: Five Evidence Verification & Edge-Case Tests
+# Part D: Evidence Verification & Edge-Case Tests
 # ---------------------------------------------------------------------------
 
 def test_evidence_checker_successful_pet_policy_accepted():
     """Test 1: Successful pet-policy lookup is accepted as verified evidence."""
-    from wandering_kettle_assistant.react_agent import extract_query_facets, check_evidence_coverage
-
     facets = extract_query_facets("Can I bring my dog on the outdoor terrace?")
     assert "pet_policy" in facets
 
@@ -317,8 +322,6 @@ def test_evidence_checker_successful_pet_policy_accepted():
 
 def test_evidence_checker_failed_pet_policy_rejected():
     """Test 2: Failed pet-policy lookup (is_error=True or execution_status='error') is strictly rejected."""
-    from wandering_kettle_assistant.react_agent import extract_query_facets, check_evidence_coverage
-
     facets = extract_query_facets("Can I bring my dog on the outdoor terrace?")
     assert "pet_policy" in facets
 
@@ -343,8 +346,6 @@ def test_evidence_checker_failed_pet_policy_rejected():
 
 def test_evidence_checker_irrelevant_observation_rejected():
     """Test 3: Successful tool execution returning irrelevant text is rejected."""
-    from wandering_kettle_assistant.react_agent import extract_query_facets, check_evidence_coverage
-
     facets = extract_query_facets("Can I bring my dog on the outdoor terrace?")
     assert "pet_policy" in facets
 
@@ -368,8 +369,6 @@ def test_evidence_checker_irrelevant_observation_rejected():
 
 def test_evidence_checker_multi_facet_partial_retrieval():
     """Test 4: Multi-facet query with only one facet retrieved leaves the other facet missing."""
-    from wandering_kettle_assistant.react_agent import extract_query_facets, check_evidence_coverage
-
     facets = extract_query_facets("Can I bring my dog outside, and what vegan options do you have?")
     assert "pet_policy" in facets
     assert "allergens_diet" in facets
@@ -432,3 +431,205 @@ async def test_react_agent_max_iterations_refuses_unverified_claim():
     assert "Deterministic Safeguard Notice" in result["final_answer"]
     assert len(result["missing_facets"]) > 0
 
+
+# ---------------------------------------------------------------------------
+# Part D: Query-Specific Constraint-Based Evidence Checks
+# ---------------------------------------------------------------------------
+
+def test_cat_question_not_satisfied_by_dog_evidence():
+    """'Cat' question must NOT be satisfied by dog-only evidence when using constraints."""
+    constraints = _extract_constraints(
+        "Can I bring my cat to the terrace?",
+        extract_query_facets("Can I bring my cat to the terrace?"),
+    )
+    assert len(constraints) >= 1
+
+    # Only dog evidence (no mention of cat or generic animal)
+    trace = [
+        {
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "Dogs are welcome on the small terrace at the top of the stairs.",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage_with_constraints(constraints, trace)
+    assert len(missing) >= 1, "Cat question must NOT be satisfied by dog-only evidence"
+
+
+def test_dog_question_satisfied_by_dog_evidence():
+    """'Dog' question IS satisfied by dog evidence."""
+    constraints = _extract_constraints(
+        "Can I bring my dog to the terrace?",
+        extract_query_facets("Can I bring my dog to the terrace?"),
+    )
+
+    trace = [
+        {
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "Dogs are welcome on the small terrace at the top of the stairs.",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage_with_constraints(constraints, trace)
+    assert len(covered) == 1
+    assert len(missing) == 0
+
+
+def test_gluten_question_not_satisfied_by_nut_evidence():
+    """Gluten question must NOT be satisfied by nut allergy evidence."""
+    constraints = _extract_constraints(
+        "What options do you have for someone avoiding gluten?",
+        extract_query_facets("What options do you have for someone avoiding gluten?"),
+    )
+
+    # Nut allergy evidence only
+    trace = [
+        {
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "Almond croissants are made with almond paste. We do not use peanuts anywhere.",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage_with_constraints(constraints, trace)
+    assert len(missing) >= 1, "Gluten question must NOT be satisfied by nut-only evidence"
+
+
+def test_gluten_question_satisfied_by_gluten_evidence():
+    """Gluten question IS satisfied by proper gluten/wheat evidence."""
+    constraints = _extract_constraints(
+        "What options do you have for someone avoiding gluten?",
+        extract_query_facets("What options do you have for someone avoiding gluten?"),
+    )
+
+    trace = [
+        {
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "We have no gluten free bread. The rice porridge and the soup of the day are usually safe.",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage_with_constraints(constraints, trace)
+    assert len(covered) == 1
+    assert len(missing) == 0
+
+
+def test_saturday_only_evidence_does_not_satisfy_both_days_constraint():
+    """Saturday+Sunday question must NOT be satisfied by Saturday-only evidence."""
+    q = "What are the opening hours on Saturday and Sunday?"
+    constraints = _extract_constraints(q, extract_query_facets(q))
+
+    # Only Saturday evidence
+    trace = [
+        {
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "Saturday: 9:00 to 22:00",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage_with_constraints(constraints, trace)
+    assert len(missing) >= 1, "Saturday-only evidence must not satisfy Saturday+Sunday constraint"
+
+
+def test_both_days_evidence_satisfies_both_days_constraint():
+    """Saturday+Sunday evidence satisfies Saturday+Sunday constraint."""
+    q = "What are the opening hours on Saturday and Sunday?"
+    constraints = _extract_constraints(q, extract_query_facets(q))
+
+    trace = [
+        {
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "Saturday: 9:00 to 22:00  Sunday: 9:00 to 17:00",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage_with_constraints(constraints, trace)
+    assert len(covered) == 1
+    assert len(missing) == 0
+
+
+def test_failed_calls_with_relevant_text_not_counted():
+    """Failed calls (is_error=True) must not count as evidence even if text contains keywords."""
+    constraints = _extract_constraints(
+        "Can I bring my dog to the terrace?",
+        extract_query_facets("Can I bring my dog to the terrace?"),
+    )
+
+    trace = [
+        {
+            "execution_status": "error",
+            "is_error": True,
+            "observation": {
+                "content": "Error: Dogs are welcome on the small terrace (cached). ChromaDB connection failed.",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage_with_constraints(constraints, trace)
+    assert len(covered) == 0
+    assert len(missing) >= 1
+
+
+def test_per_observation_checking_not_combined():
+    """Keywords split across TWO observations must NOT collectively satisfy a single constraint."""
+    q = "What are the opening hours on Saturday and Sunday?"
+    constraints = _extract_constraints(q, extract_query_facets(q))
+
+    # Saturday in one observation, Sunday in another — should NOT satisfy the combined constraint
+    trace = [
+        {
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {"content": "Saturday: 9:00 to 22:00"},
+        },
+        {
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {"content": "Sunday: 9:00 to 17:00"},
+        },
+    ]
+
+    covered, missing = check_evidence_coverage_with_constraints(constraints, trace)
+    assert len(missing) >= 1, "Split evidence across observations must not satisfy combined constraint"
+
+
+def test_three_facets_one_retrieved():
+    """Three-facet query with only one facet retrieved leaves two missing."""
+    q = "Can I bring my dog, what food do you have, and do you have gluten-free options?"
+    facets = extract_query_facets(q)
+    assert len(facets) >= 3  # pet_policy, food_menu, allergens_diet
+
+    constraints = _extract_constraints(q, facets)
+    assert len(constraints) >= 3
+
+    # Only pet policy evidence
+    trace = [
+        {
+            "execution_status": "success",
+            "is_error": False,
+            "observation": {
+                "content": "Dogs are welcome on the small terrace at the top of the stairs.",
+            },
+        }
+    ]
+
+    covered, missing = check_evidence_coverage_with_constraints(constraints, trace)
+    assert len(covered) == 1
+    assert len(missing) >= 2

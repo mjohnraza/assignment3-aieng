@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import re
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import ollama
@@ -96,6 +97,15 @@ TOOLS_SCHEMA = [
 AVAILABLE_TOOL_NAMES = ["lookup_cafe_policy", "search_menu", "search"]
 
 
+@dataclass
+class QueryConstraint:
+    """A specific evidence requirement that must be satisfied by a SINGLE observation."""
+    facet_key: str
+    description: str
+    # Each checker receives the lowercase text of a SINGLE observation
+    checker: Callable[[str], bool]
+
+
 def extract_query_facets(question: str) -> Dict[str, str]:
     """Identify required informational facets from the user query."""
     q = question.lower()
@@ -113,6 +123,138 @@ def extract_query_facets(question: str) -> Dict[str, str]:
     return facets
 
 
+def _extract_constraints(question: str, facets: Dict[str, str]) -> List[QueryConstraint]:
+    """Extract query-specific constraints from the question text.
+
+    Each constraint specifies the EXACT entity or detail the user asked about,
+    not just a broad facet category. The checker verifies that a SINGLE observation
+    contains the needed evidence (not across multiple observations combined).
+    """
+    q = question.lower()
+    constraints: List[QueryConstraint] = []
+
+    if "pet_policy" in facets:
+        # Determine the specific animal the user asked about
+        if "cat" in q:
+            constraints.append(QueryConstraint(
+                facet_key="pet_policy",
+                description="Cat policy on the terrace/outdoors",
+                checker=lambda t: (
+                    ("cat" in t or "animal" in t or "assistance" in t)
+                    and ("terrace" in t or "outdoor" in t or "welcome" in t or "not mentioned" in t)
+                ),
+            ))
+        elif "dog" in q:
+            constraints.append(QueryConstraint(
+                facet_key="pet_policy",
+                description="Dog policy on the terrace/outdoors",
+                checker=lambda t: (
+                    "dog" in t
+                    and ("terrace" in t or "outdoor" in t or "stairs" in t or "welcome" in t)
+                ),
+            ))
+        else:
+            # Generic pet/animal/terrace question
+            constraints.append(QueryConstraint(
+                facet_key="pet_policy",
+                description="Pet/animal policy on the terrace/outdoors",
+                checker=lambda t: (
+                    ("dog" in t or "animal" in t or "pet" in t)
+                    and ("terrace" in t or "outdoor" in t or "stairs" in t)
+                ),
+            ))
+
+    if "food_menu" in facets:
+        constraints.append(QueryConstraint(
+            facet_key="food_menu",
+            description="Food menu options",
+            checker=lambda t: any(
+                item in t for item in ["sandwich", "baguette", "porridge", "toast", "soup", "hummus", "egg salad", "scrambled"]
+            ),
+        ))
+
+    if "allergens_diet" in facets:
+        # Determine the specific dietary concern
+        if "gluten" in q or "wheat" in q:
+            constraints.append(QueryConstraint(
+                facet_key="allergens_diet",
+                description="Gluten/wheat dietary accommodations",
+                checker=lambda t: (
+                    ("gluten" in t or "wheat" in t)
+                    and ("bread" in t or "porridge" in t or "soup" in t or "pastry" in t or "pastries" in t)
+                ),
+            ))
+        elif "vegan" in q or "plant" in q:
+            constraints.append(QueryConstraint(
+                facet_key="allergens_diet",
+                description="Vegan/plant-based dietary options",
+                checker=lambda t: (
+                    ("plant based" in t or "vegan" in t or "without animal" in t or "without dairy" in t or "no dairy" in t)
+                    or ("hummus" in t and "vegetable" in t)
+                ),
+            ))
+        elif "nut" in q:
+            constraints.append(QueryConstraint(
+                facet_key="allergens_diet",
+                description="Nut allergy information",
+                checker=lambda t: ("nut" in t or "almond" in t or "peanut" in t),
+            ))
+        else:
+            # Generic allergen query
+            constraints.append(QueryConstraint(
+                facet_key="allergens_diet",
+                description="Allergens and dietary accommodations",
+                checker=lambda t: any(
+                    term in t for term in ["gluten", "wheat", "dairy", "plant based", "peanut", "nut", "animal product", "allergen"]
+                ),
+            ))
+
+    if "hours" in facets:
+        # Determine specific day(s) the user asked about
+        if "saturday" in q and "sunday" in q:
+            constraints.append(QueryConstraint(
+                facet_key="hours",
+                description="Saturday AND Sunday operating hours",
+                checker=lambda t: (
+                    "saturday" in t and "sunday" in t
+                    and any(ts in t for ts in ["9:00", "22:00", "17:00"])
+                ),
+            ))
+        elif "saturday" in q:
+            constraints.append(QueryConstraint(
+                facet_key="hours",
+                description="Saturday operating hours",
+                checker=lambda t: "saturday" in t and any(ts in t for ts in ["9:00", "22:00"]),
+            ))
+        elif "sunday" in q:
+            constraints.append(QueryConstraint(
+                facet_key="hours",
+                description="Sunday operating hours",
+                checker=lambda t: "sunday" in t and any(ts in t for ts in ["9:00", "17:00"]),
+            ))
+        else:
+            constraints.append(QueryConstraint(
+                facet_key="hours",
+                description="Operating hours and access",
+                checker=lambda t: (
+                    any(d in t for d in ["monday", "friday", "saturday", "sunday", "schedule"])
+                    and any(ts in t for ts in ["8:00", "9:00", "18:00", "22:00", "17:00", "open", "closed"])
+                ),
+            ))
+
+    if "work_wifi" in facets:
+        constraints.append(QueryConstraint(
+            facet_key="work_wifi",
+            description="Laptop and Wi-Fi policy",
+            checker=lambda t: (
+                ("kettle-guest" in t or "socket" in t or "window bench" in t)
+                and ("wifi" in t or "laptop" in t or "work" in t or "wireless" in t)
+            ),
+        ))
+
+    return constraints
+
+
 def check_evidence_coverage(
     facets: Dict[str, str],
     trace: List[Dict[str, Any]],
@@ -122,8 +264,8 @@ def check_evidence_coverage(
     Evidence evaluation rules:
     1. Ignore failed, timed-out, and malformed tool calls (is_error=True or execution_status != 'success').
     2. Never count tool names or input arguments as retrieved evidence.
-    3. Inspect strictly the actual observation content of successful tool executions.
-    4. Check whether observation content contains factually relevant information for the facet.
+    3. Check each constraint against each observation INDEPENDENTLY (not against combined corpus).
+    4. Only a SINGLE successful observation must satisfy a constraint on its own.
     5. Mark unsupported facets as missing.
     """
     if not facets:
@@ -151,53 +293,105 @@ def check_evidence_coverage(
         if isinstance(content, str) and content.strip():
             successful_contents.append(content.lower())
 
-    verified_corpus = " ".join(successful_contents)
+    # 2. Build query-specific constraints from the question text
+    # We need the original question — reconstruct from facets or use a broad check
+    # For backward compatibility, we check facets directly when no constraints available
+    # _extract_constraints is called by the agent with the original question
 
-    # 2. Check each requested facet against actual successful observation content
+    # 2. Check each facet against individual successful observations
     for facet_key, facet_desc in facets.items():
         is_facet_covered = False
-        if facet_key == "pet_policy":
-            # Must mention dogs / animals and terrace / outdoor seating rules
-            if (
-                ("dog" in verified_corpus or "animal" in verified_corpus)
-                and ("terrace" in verified_corpus or "outdoor" in verified_corpus or "stairs" in verified_corpus)
-            ):
-                is_facet_covered = True
-        elif facet_key == "food_menu":
-            # Must contain actual food menu items
-            if any(
-                item in verified_corpus
-                for item in ["sandwich", "baguette", "porridge", "toast", "soup", "hummus", "egg salad"]
-            ):
-                is_facet_covered = True
-        elif facet_key == "allergens_diet":
-            # Must contain allergen warnings or dietary specifications
-            if any(
-                term in verified_corpus
-                for term in ["gluten", "wheat", "dairy", "plant based", "peanut", "nut", "animal product", "without wheat"]
-            ):
-                is_facet_covered = True
-        elif facet_key == "hours":
-            # Must contain operating schedule details
-            if any(
-                day in verified_corpus for day in ["monday", "friday", "saturday", "sunday", "schedule"]
-            ) and any(
-                time_str in verified_corpus for time_str in ["8:00", "9:00", "18:00", "22:00", "17:00", "open", "closed"]
-            ):
-                is_facet_covered = True
-        elif facet_key == "work_wifi":
-            # Must contain laptop/work policy or wifi credentials
-            if (
-                "kettle-guest" in verified_corpus or "socket" in verified_corpus or "window bench" in verified_corpus
-            ) and (
-                "wifi" in verified_corpus or "laptop" in verified_corpus or "work" in verified_corpus
-            ):
-                is_facet_covered = True
+
+        for obs_text in successful_contents:
+            if facet_key == "pet_policy":
+                if (
+                    ("dog" in obs_text or "animal" in obs_text)
+                    and ("terrace" in obs_text or "outdoor" in obs_text or "stairs" in obs_text)
+                ):
+                    is_facet_covered = True
+                    break
+            elif facet_key == "food_menu":
+                if any(
+                    item in obs_text
+                    for item in ["sandwich", "baguette", "porridge", "toast", "soup", "hummus", "egg salad"]
+                ):
+                    is_facet_covered = True
+                    break
+            elif facet_key == "allergens_diet":
+                if any(
+                    term in obs_text
+                    for term in ["gluten", "wheat", "dairy", "plant based", "peanut", "nut", "animal product", "without wheat"]
+                ):
+                    is_facet_covered = True
+                    break
+            elif facet_key == "hours":
+                if any(
+                    day in obs_text for day in ["monday", "friday", "saturday", "sunday", "schedule"]
+                ) and any(
+                    time_str in obs_text for time_str in ["8:00", "9:00", "18:00", "22:00", "17:00", "open", "closed"]
+                ):
+                    is_facet_covered = True
+                    break
+            elif facet_key == "work_wifi":
+                if (
+                    "kettle-guest" in obs_text or "socket" in obs_text or "window bench" in obs_text
+                ) and (
+                    "wifi" in obs_text or "laptop" in obs_text or "work" in obs_text
+                ):
+                    is_facet_covered = True
+                    break
 
         if is_facet_covered:
             covered.append(facet_desc)
         else:
             missing.append(facet_desc)
+
+    return covered, missing
+
+
+def check_evidence_coverage_with_constraints(
+    constraints: List['QueryConstraint'],
+    trace: List[Dict[str, Any]],
+) -> Tuple[List[str], List[str]]:
+    """Check evidence coverage using query-specific constraints.
+
+    Each constraint must be satisfied by at least one SINGLE successful observation
+    independently (not by combining keywords across multiple observations).
+    """
+    if not constraints:
+        return [], []
+
+    covered: List[str] = []
+    missing: List[str] = []
+
+    # Collect successful observation contents
+    successful_contents: List[str] = []
+    for t in trace:
+        is_err = t.get("is_error", False)
+        status = t.get("execution_status", t.get("observation_status", "error"))
+        if is_err or status != "success":
+            continue
+
+        obs = t.get("observation")
+        if isinstance(obs, dict) and "content" in obs:
+            content = obs["content"]
+        else:
+            content = t.get("result", t.get("observation_preview", ""))
+
+        if isinstance(content, str) and content.strip():
+            successful_contents.append(content.lower())
+
+    # Check each constraint independently against each observation
+    for constraint in constraints:
+        satisfied = False
+        for obs_text in successful_contents:
+            if constraint.checker(obs_text):
+                satisfied = True
+                break
+        if satisfied:
+            covered.append(constraint.description)
+        else:
+            missing.append(constraint.description)
 
     return covered, missing
 

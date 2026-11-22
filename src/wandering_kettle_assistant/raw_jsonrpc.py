@@ -161,29 +161,51 @@ class RobustRawJSONRPCClient:
         timeout: float = 5.0,
     ) -> Dict[str, Any]:
         """
-        Read the next line from process stdout with timeout, ignoring stray non-JSON server logs,
-        and validating the JSON-RPC frame.
+        Read the next line from process stdout with a genuine cross-platform timeout.
+
+        Uses a background daemon thread to read lines into a queue.Queue, so
+        the main thread never blocks on readline() — it calls queue.get(timeout=...)
+        instead. This works identically on Windows and Linux.
         """
+        line_queue: queue.Queue = queue.Queue()
+        _SENTINEL = None  # signals EOF from the reader thread
+
+        def _reader():
+            """Daemon thread: continuously reads lines from proc.stdout into the queue."""
+            try:
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:
+                        line_queue.put(_SENTINEL)
+                        break
+                    line_queue.put(line)
+            except Exception:
+                line_queue.put(_SENTINEL)
+
+        reader_thread = threading.Thread(target=_reader, daemon=True)
+        reader_thread.start()
+
         start_time = time.time()
         while True:
-            if proc.poll() is not None and not proc.stdout.readable():
-                raise ServerProcessTerminatedError(
-                    f"Server process terminated with code {proc.returncode} while awaiting response."
-                )
-
-            # Check timeout
-            elapsed = time.time() - start_time
-            if elapsed > timeout:
+            remaining = timeout - (time.time() - start_time)
+            if remaining <= 0:
                 raise JSONRPCTimeoutError(f"Timed out after {timeout:.1f}s awaiting JSON-RPC response.")
 
-            line = proc.stdout.readline()
-            if not line:
+            try:
+                line = line_queue.get(timeout=min(remaining, 0.5))
+            except queue.Empty:
+                # Check if process terminated while we were waiting
                 if proc.poll() is not None:
                     raise ServerProcessTerminatedError(
-                        f"Server process terminated unexpectedly (exit code: {proc.returncode})."
+                        f"Server process terminated with code {proc.returncode} while awaiting response."
                     )
-                time.sleep(0.01)
                 continue
+
+            if line is _SENTINEL:
+                # EOF from reader — process closed stdout
+                raise ServerProcessTerminatedError(
+                    f"Server process terminated unexpectedly (exit code: {proc.returncode})."
+                )
 
             stripped = line.strip()
             # Discard non-JSON log lines so server logs never contaminate the protocol stream

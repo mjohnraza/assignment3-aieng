@@ -38,10 +38,12 @@ GROUND_TRUTH_PASSAGES = {
     "gt_hours_weekend": {
         "passage_id": "gt_hours_weekend",
         "source": "hours_access.txt",
-        "description": "Saturday 9:00 to 22:00 and Sunday 9:00 to 17:00 schedule",
+        "description": "Saturday 9:00 to 22:00 AND Sunday 9:00 to 17:00 schedule",
         "matcher": lambda text: (
-            ("saturday" in text.lower() or "sunday" in text.lower())
-            and ("9:00" in text.lower() or "22:00" in text.lower() or "17:00" in text.lower() or "open" in text.lower())
+            # Must establish BOTH Saturday AND Sunday operating hours
+            "saturday" in text.lower()
+            and "sunday" in text.lower()
+            and any(t in text for t in ["9:00", "22:00", "17:00"])
         ),
     },
     "gt_animals_terrace": {
@@ -59,32 +61,54 @@ GROUND_TRUTH_PASSAGES = {
         "source": "allergens.txt",
         "description": "Roasted vegetable and hummus sandwich and rice porridge fully plant-based without animal products",
         "matcher": lambda text: (
-            ("plant based" in text.lower() or "without animal products" in text.lower() or "roasted vegetable" in text.lower())
-            and ("sandwich" in text.lower() or "porridge" in text.lower() or "hummus" in text.lower() or "soup" in text.lower())
+            # Must establish actual plant-based suitability — not just vegetable/sandwich keywords
+            ("plant based" in text.lower() or "without animal products" in text.lower())
+            and ("sandwich" in text.lower() or "porridge" in text.lower() or "hummus" in text.lower())
         ),
     },
     "gt_plant_based_menu": {
         "passage_id": "gt_plant_based_menu",
         "source": "menu_food.txt",
         "description": "Roasted vegetable and hummus sandwich pricing and bread description",
-        "matcher": lambda text: "roasted vegetable and hummus" in text.lower() and ("$5.60" in text.lower() or "sandwiches" in text.lower()),
+        "matcher": lambda text: "roasted vegetable and hummus" in text.lower() and ("$5.60" in text or "sandwiches" in text.lower()),
     },
-    "gt_laptop_wifi_policy": {
-        "passage_id": "gt_laptop_wifi_policy",
+    "gt_laptop_policy": {
+        "passage_id": "gt_laptop_policy",
         "source": "faq.txt",
-        "description": "Laptops away Friday/Saturday after six; kettle-guest network and password; window bench sockets",
+        "description": "Laptop usage policy: allowed most days, laptops away Friday/Saturday after six",
         "matcher": lambda text: (
-            ("laptop" in text.lower() or "stay and work" in text.lower() or "kettle-guest" in text.lower() or "socket" in text.lower())
-            and ("wifi" in text.lower() or "wireless" in text.lower() or "outlet" in text.lower() or "bench" in text.lower() or "work" in text.lower())
+            ("laptop" in text.lower() or "stay and work" in text.lower())
+            and ("friday" in text.lower() or "saturday" in text.lower() or "ninety minutes" in text.lower() or "conversation" in text.lower())
+        ),
+    },
+    "gt_wifi_credentials": {
+        "passage_id": "gt_wifi_credentials",
+        "source": "faq.txt",
+        "description": "Wi-Fi network kettle-guest, password on paper coaster, changes monthly",
+        "matcher": lambda text: (
+            "kettle-guest" in text.lower()
+            and ("password" in text.lower() or "coaster" in text.lower())
+        ),
+    },
+    "gt_power_sockets": {
+        "passage_id": "gt_power_sockets",
+        "source": "faq.txt",
+        "description": "Six sockets along window bench, two beside bookshelf, middle tables have none",
+        "matcher": lambda text: (
+            "socket" in text.lower()
+            and ("window bench" in text.lower() or "book" in text.lower() or "six" in text.lower())
         ),
     },
     "gt_gluten_wheat_alternatives": {
         "passage_id": "gt_gluten_wheat_alternatives",
         "source": "allergens.txt",
-        "description": "No gluten free bread; rice porridge and soup usually safe",
+        "description": "No gluten-free bread; rice porridge and soup usually safe (barley caveat)",
         "matcher": lambda text: (
+            # Must verify BOTH the limitation (no gluten-free bread) AND safe alternatives
             ("gluten" in text.lower() or "without wheat" in text.lower())
-            and ("bread" in text.lower() or "porridge" in text.lower() or "soup" in text.lower())
+            and ("no" in text.lower() or "not" in text.lower() or "cannot" in text.lower())
+            and ("bread" in text.lower())
+            and ("porridge" in text.lower() or "soup" in text.lower())
         ),
     },
     "gt_warm_winter_drinks": {
@@ -129,8 +153,8 @@ TEST_QUERIES = [
         "topic": "Working environment",
         "query": "Can I work on my laptop, and where can I find Wi-Fi and power sockets?",
         "expected_sources": ["faq.txt"],
-        "expected_passage_ids": ["gt_laptop_wifi_policy"],
-        "relevance_criteria": "Must mention laptop policies, kettle-guest Wi-Fi, or outlet locations (window bench/bookshelf).",
+        "expected_passage_ids": ["gt_laptop_policy", "gt_wifi_credentials", "gt_power_sockets"],
+        "relevance_criteria": "Must mention laptop policies (curfew), kettle-guest Wi-Fi credentials, AND outlet locations (window bench/bookshelf).",
     },
     {
         "id": 5,
