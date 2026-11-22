@@ -129,7 +129,7 @@ uv run python steps/03_llm_rag.py
 ```
 - Implements the complete sequence: `User question → LLM tool decision → MCP Client invocation (ClientSession.call_tool()) → retrieved context → LLM response`.
 - Evaluates 5 café questions across diverse topics.
-- **Dual-Aspect Programmatic Negative Test Assertion:** Independently verifies that the assistant accurately states both that on-site parking is unavailable (or refers to the coin lot) AND that EV charging is unavailable/unmentioned, guarding against partial hallucinations.
+- **Dual-Aspect Programmatic Negative Test Assertion:** Independently verifies that the assistant accurately distinguishes between confirmed absent amenities (`hours_access.txt` explicitly states: "We have no car park") and unmentioned/undocumented amenities (EV charging is completely unmentioned in café documentation), guarding against partial hallucinations and false availability claims.
 - **MCP Error Flag Inspection:** Inspects `result.is_error` / `result.isError` directly on MCP responses.
 
 ### Part D: Iterative ReAct Agent (Steps 16–20)
@@ -140,14 +140,16 @@ uv run python steps/04_react_agent.py
   > *"I’m planning to visit the café with my cat. Can I sit outside, what food options are available, and are there any allergy considerations I should know about?"*
 - Runs an explicit `while steps < MAX_STEPS:` loop in Python with tool calls executed strictly through the MCP client (`ClientSession.call_tool()`).
 - Maintains robust conversation history with `role: "tool"`, `name`, and `tool_call_id`.
+- **Application-Level Evidence Completeness Guard:** Intercepts premature LLM stops on multi-part queries (e.g., questions spanning pet policy, food menu, and allergens) when required facets lack retrieved evidence, prompting the agent to gather necessary documentation before concluding.
+- **Deterministic Safe-Stop Safeguard:** If maximum iterations are reached or evidence is incomplete, deterministically annotates the final output with a verified vs. unverified documentation notice, ensuring users are never misled.
 - **Duplicate-Call Safeguard:** Tracks executed `(tool, argument)` fingerprints across iterations and skips redundant identical calls.
 - **Defensive Schema Validation:** Robustly handles malformed non-dictionary inputs (`None`, `list`, primitives) across all validation functions.
 - **End-to-End Error Propagation:** Raises `RetrievalError` on vector search/ChromaDB exceptions, captured by FastMCP as `isError=True` and flagged in `ToolObservation.is_error`.
 - Validates arguments against schema prior to dispatch and propagates MCP error flags back to conversational history.
 - Emits citations and explicitly distinguishes confirmed facts (e.g. dogs permitted on outdoor terrace, assistance animals permitted everywhere, vegan & gluten-free food options) from unconfirmed details (e.g. cats specifically are unmentioned in policy).
 
-### Automated Testing
-Run the complete test suite (23 passed):
+### Automated Testing & CI
+Run the complete test suite (28 passed):
 ```bash
 uv run pytest
 ```
@@ -157,11 +159,15 @@ platform win32 -- Python 3.12.10, pytest-9.2.0, pluggy-1.7.0
 rootdir: C:\Users\exam.DESKTOP-LNCC6CA\Desktop\AA3\wandering-kettle-assistant
 configfile: pyproject.toml
 plugins: anyio-4.16.0, asyncio-1.5.0
-collected 23 items
+collected 28 items
 
-tests\test_react_agent.py .........                                      [ 39%]
-tests\test_retrieval.py ....                                             [ 56%]
+tests\test_mcp_integration.py .....                                      [ 17%]
+tests\test_react_agent.py .........                                      [ 50%]
+tests\test_retrieval.py ....                                             [ 64%]
 tests\test_validation.py ..........                                      [100%]
 
-============================= 23 passed in 11.26s =============================
+============================= 28 passed in 47.38s =============================
 ```
+
+- **Live MCP Server Integration Tests (`tests/test_mcp_integration.py`):** Spawns `server.py` over Stdio transport via `MCPClientManager` without mocks, verifying `initialize`, `tools/list`, and `tools/call` for `search`, `lookup_cafe_policy`, and `search_menu`.
+- **Continuous Integration (`.github/workflows/ci.yml`):** Automatically executes the test suite on Python 3.12 via GitHub Actions on every push and pull request.

@@ -90,7 +90,9 @@ You have access to external tools that retrieve official café documentation via
 
 STRICT INSTRUCTIONS:
 1. Grounding: Answer strictly using facts retrieved from the café documents.
-2. Missing Information Safeguard: If the retrieved documents do not contain the answer or state that an amenity is not provided (for example, hours_access.txt states 'We have no car park'), explicitly state that the café has no on-site customer parking, and that EV charging is unavailable/unmentioned in the documentation. DO NOT make up or hallucinate that the café has dedicated customer parking or EV charging stations.
+2. Missing vs Unmentioned Amenities Safeguard:
+   - Confirmed Absent Amenities: If the documentation explicitly states that an amenity is not provided (e.g. hours_access.txt explicitly states: "We have no car park"), state clearly that the café has no on-site customer parking.
+   - Undocumented / Unmentioned Amenities: If an amenity is NOT mentioned in café documents (e.g. EV charging is never mentioned anywhere in the café documentation), you must explicitly state that electric vehicle (EV) charging is not mentioned or undocumented in official café documents. DO NOT assert that EV charging is confirmed unavailable or non-existent, and DO NOT hallucinate that it exists.
 3. Citations: Quote or reference the source document (e.g. faq.txt, allergens.txt, hours_access.txt).
 """
 

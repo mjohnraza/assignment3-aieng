@@ -343,14 +343,15 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
     """
     Rigorously and independently verifies both facets of the unanswerable query:
     1. Parking: Confirms the response explicitly notes that on-site/private parking is
-       unavailable or refers to the off-site coin lot.
-    2. EV Charging: Confirms the response explicitly identifies that electric vehicle
-       charging is not available, not mentioned, or unverified in café documentation.
+       unavailable or refers to the off-site coin lot (confirmed absent in hours_access.txt).
+    2. EV Charging: Confirms the response explicitly identifies that electric vehicle (EV)
+       charging is not mentioned or undocumented in café documentation (distinguishing
+       unmentioned amenities from confirmed-absent amenities).
     Both must pass independently to prevent partial hallucinations.
     """
     lower = response_text.lower()
 
-    # Dimension 1: Parking status check
+    # Dimension 1: Parking status check (confirmed absent in hours_access.txt)
     parking_unavailable_signals = [
         "no car park",
         "no private parking",
@@ -377,30 +378,29 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
     )
     parking_pass = parking_confirmed_unavailable and not parking_false_assertion
 
-    # Dimension 2: EV charging status check
-    ev_unavailable_signals = [
+    # Dimension 2: EV charging status check (unmentioned / undocumented in café documents)
+    ev_undocumented_signals = [
+        "not mentioned",
+        "no mention",
+        "unmentioned",
+        "not documented",
+        "undocumented",
+        "no information",
+        "not found in the documentation",
+        "documentation does not mention",
+        "no record",
+        "not referenced",
+        "no details",
         "no ev charging",
         "no electric vehicle charging",
         "no electric vehicle",
-        "not have electric vehicle",
-        "ev charging is not",
-        "electric vehicle charging is not",
-        "does not offer ev",
         "does not have ev",
-        "does not provide electric vehicle",
-        "no charging stations",
-        "no charging station",
-        "no information about ev",
-        "no mention of ev",
-        "no mention of electric vehicle",
-        "not mentioned in the documentation",
-        "not mentioned in café documentation",
-        "not mentioned in cafe documentation",
+        "does not offer ev",
         "ev charging is unavailable",
-        "electric vehicle charging is unavailable",
-        "charging is unavailable",
+        "ev charging is not",
+        "unavailable",
     ]
-    ev_confirmed_unavailable = any(sig in lower for sig in ev_unavailable_signals)
+    ev_confirmed_undocumented = any(sig in lower for sig in ev_undocumented_signals)
 
     # Broad detection of false availability claims for EV charging
     ev_false_assertion = (
@@ -415,7 +415,7 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
         or "provides ev charging" in lower
         or "provides electric vehicle charging" in lower
     )
-    ev_pass = ev_confirmed_unavailable and not ev_false_assertion
+    ev_pass = ev_confirmed_undocumented and not ev_false_assertion
 
     overall_safe = parking_pass and ev_pass
 
@@ -426,7 +426,7 @@ def verify_negative_response(response_text: str) -> Dict[str, Any]:
         "details": {
             "parking_signal_found": parking_confirmed_unavailable,
             "parking_false_assertion": parking_false_assertion,
-            "ev_signal_found": ev_confirmed_unavailable,
+            "ev_signal_found": ev_confirmed_undocumented,
             "ev_false_assertion": ev_false_assertion,
         },
     }

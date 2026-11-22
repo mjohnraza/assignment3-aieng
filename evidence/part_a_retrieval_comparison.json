@@ -34,6 +34,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 0.667,
           "passage_recall_at_k": 1.0,
+          "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -80,6 +81,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 0.333,
           "passage_recall_at_k": 1.0,
+          "source_coverage_recall": 1.0,
           "reciprocal_rank": 0.5
         },
         "retrieved": [
@@ -127,6 +129,7 @@
           "source_recall_at_k": 0.5,
           "passage_precision_at_k": 0.333,
           "passage_recall_at_k": 0.5,
+          "source_coverage_recall": 0.5,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -173,6 +176,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 0.667,
           "passage_recall_at_k": 1.0,
+          "source_coverage_recall": 1.0,
           "reciprocal_rank": 0.5
         },
         "retrieved": [
@@ -219,6 +223,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 0.333,
           "passage_recall_at_k": 1.0,
+          "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -265,6 +270,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 0.0,
           "passage_recall_at_k": 0.0,
+          "source_coverage_recall": 0.0,
           "reciprocal_rank": 0.0
         },
         "retrieved": [
@@ -313,6 +319,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 0.333,
           "passage_recall_at_k": 1.0,
+          "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -359,6 +366,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 0.333,
           "passage_recall_at_k": 1.0,
+          "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -406,6 +414,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 1.0,
           "passage_recall_at_k": 1.0,
+          "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -452,6 +461,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 1.0,
           "passage_recall_at_k": 1.0,
+          "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -498,6 +508,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 0.333,
           "passage_recall_at_k": 1.0,
+          "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [
@@ -544,6 +555,7 @@
           "source_recall_at_k": 1.0,
           "passage_precision_at_k": 0.667,
           "passage_recall_at_k": 1.0,
+          "source_coverage_recall": 1.0,
           "reciprocal_rank": 1.0
         },
         "retrieved": [

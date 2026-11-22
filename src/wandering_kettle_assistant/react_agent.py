@@ -95,6 +95,53 @@ TOOLS_SCHEMA = [
 
 AVAILABLE_TOOL_NAMES = ["lookup_cafe_policy", "search_menu", "search"]
 
+
+def extract_query_facets(question: str) -> Dict[str, str]:
+    """Identify required informational facets from the user query."""
+    q = question.lower()
+    facets = {}
+    if any(k in q for k in ["pet", "cat", "dog", "animal", "terrace", "sit outside", "outside", "patio"]):
+        facets["pet_policy"] = "Outdoor seating and pet/animal policy"
+    if any(k in q for k in ["food", "menu", "eat", "sandwich", "pastry", "breakfast", "lunch", "dish"]):
+        facets["food_menu"] = "Food menu options"
+    if any(k in q for k in ["allerg", "gluten", "wheat", "vegan", "plant", "dairy", "nut", "diet"]):
+        facets["allergens_diet"] = "Allergens and dietary accommodations"
+    if any(k in q for k in ["hour", "open", "close", "schedule", "when are you"]):
+        facets["hours"] = "Operating hours and access"
+    if any(k in q for k in ["wifi", "wi-fi", "internet", "laptop", "socket", "outlet", "work"]):
+        facets["work_wifi"] = "Laptop and Wi-Fi policy"
+    return facets
+
+
+def check_evidence_coverage(
+    facets: Dict[str, str],
+    trace: List[Dict[str, Any]],
+) -> Tuple[List[str], List[str]]:
+    """Determine which facets have retrieved evidence vs which remain unverified."""
+    if not facets:
+        return [], []
+    covered: List[str] = []
+    missing: List[str] = []
+    all_evidence = " ".join(
+        f"{t.get('action', '')} {json.dumps(t.get('arguments', {}))} {t.get('observation_preview', '')}".lower()
+        for t in trace
+    )
+    for facet_key, facet_desc in facets.items():
+        if facet_key == "pet_policy" and any(k in all_evidence for k in ["pet", "dog", "terrace", "animal", "outside"]):
+            covered.append(facet_desc)
+        elif facet_key == "food_menu" and any(k in all_evidence for k in ["menu", "food", "sandwich", "toast", "porridge", "slate"]):
+            covered.append(facet_desc)
+        elif facet_key == "allergens_diet" and any(k in all_evidence for k in ["allergen", "gluten", "wheat", "dairy", "plant", "nut", "animal products"]):
+            covered.append(facet_desc)
+        elif facet_key == "hours" and any(k in all_evidence for k in ["hour", "open", "monday", "saturday", "sunday"]):
+            covered.append(facet_desc)
+        elif facet_key == "work_wifi" and any(k in all_evidence for k in ["wifi", "kettle-guest", "socket", "laptop", "work"]):
+            covered.append(facet_desc)
+        else:
+            missing.append(facet_desc)
+    return covered, missing
+
+
 SYSTEM_PROMPT = """You are a helpful and honest knowledge assistant for "The Wandering Kettle" café.
 Answer user requests by reasoning through what information is needed, calling external tools iteratively via the Model Context Protocol (MCP), and stopping only when you have gathered sufficient evidence.
 
@@ -178,21 +225,46 @@ class ReActAgent:
 
                 print(f"[Reasoning/Thought]:\n{thought_text if thought_text else '(Direct tool selection)'}\n")
 
-                # Stopping Condition: If no tool calls were requested, LLM completed synthesis
+                # Stopping Condition: If no tool calls were requested, LLM attempted to conclude
                 if not tool_calls:
+                    required_facets = extract_query_facets(user_question)
+                    covered, missing = check_evidence_coverage(required_facets, trace)
+
+                    # For multi-part queries, if some aspects lack evidence, prevent premature stopping
+                    if len(required_facets) > 1 and missing and steps < self.max_steps:
+                        print(f">> [Evidence Completeness Interceptor]: Missing evidence for: {missing}. Forcing continuation.")
+                        messages.append(msg)
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                f"[Evidence Completeness Guard]: You attempted to conclude, but you have not yet gathered documentation for: {', '.join(missing)}. "
+                                "Please invoke the appropriate tool (e.g. lookup_cafe_policy, search_menu, or search) before providing your final answer."
+                            ),
+                        })
+                        continue
+
                     print(">> [Decision]: Sufficient evidence gathered. Returning Final Answer.\n")
+                    final_output = thought_text
+                    if missing:
+                        final_output += (
+                            f"\n\n[Deterministic Safeguard Notice: Verified evidence gathered for: {', '.join(covered) if covered else 'None'}. "
+                            f"Unverified aspects: {', '.join(missing)}. Please verify unconfirmed details directly with café staff.]"
+                        )
+
                     trace.append({
                         "step": steps,
                         "thought": thought_text,
                         "action": "final_answer",
-                        "final_answer": thought_text,
+                        "final_answer": final_output,
                     })
                     return {
                         "question": user_question,
                         "status": "completed",
                         "iterations": steps,
                         "trace": trace,
-                        "final_answer": thought_text,
+                        "final_answer": final_output,
+                        "covered_facets": covered,
+                        "missing_facets": missing,
                     }
 
                 # LLM selected tool calls
@@ -324,8 +396,11 @@ class ReActAgent:
                         "observation_preview": str(observation.result)[:250],
                     })
 
-            # Safeguard: Max steps reached
-            print(">> [Safeguard]: Max iterations reached. Prompting LLM for grounded final synthesis.\n")
+            # Safeguard: Max steps reached with Deterministic Safe-Stop Mechanism
+            print(">> [Safeguard]: Max iterations reached. Executing deterministic safe-stop synthesis.\n")
+            required_facets = extract_query_facets(user_question)
+            covered, missing = check_evidence_coverage(required_facets, trace)
+
             messages.append({
                 "role": "user",
                 "content": "You have reached the maximum step limit. Synthesize your final answer now based solely on the retrieved evidence above. Distinguish confirmed from missing facts.",
@@ -337,12 +412,22 @@ class ReActAgent:
             )
             final_answer = final_call["message"]["content"].strip()
 
+            # Deterministic safe-stop mechanism: append safety notice if evidence was incomplete
+            if missing:
+                safe_notice = (
+                    f"\n\n[Deterministic Safeguard Notice: The assistant gathered verified documentation for: {', '.join(covered) if covered else 'None'}. "
+                    f"Evidence was NOT retrieved for: {', '.join(missing)}. Answers for unverified aspects must be confirmed with café staff directly.]"
+                )
+                final_answer += safe_notice
+
             return {
                 "question": user_question,
                 "status": "max_steps_reached",
                 "iterations": steps,
                 "trace": trace,
                 "final_answer": final_answer,
+                "covered_facets": covered,
+                "missing_facets": missing,
             }
 
         finally:

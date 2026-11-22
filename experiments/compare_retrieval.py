@@ -29,12 +29,14 @@ COLLECTIONS = {
 }
 
 # Six evaluation queries covering core café facets
+# Six evaluation queries covering core café facets with expected ground truth sources & target passage counts
 TEST_QUERIES = [
     {
         "id": 1,
         "topic": "Opening hours",
         "query": "What are the cafe opening hours on Saturday and Sunday?",
         "expected_sources": ["hours_access.txt"],
+        "target_passages": 1,
         "relevance_criteria": "Must state Saturday (9:00-22:00) and Sunday (9:00-17:00) operating hours.",
         "passage_evaluator": lambda text: (
             ("saturday" in text.lower() or "sunday" in text.lower())
@@ -46,6 +48,7 @@ TEST_QUERIES = [
         "topic": "Outdoor seating and pets",
         "query": "Can I bring my dog and sit outside on the terrace?",
         "expected_sources": ["faq.txt"],
+        "target_passages": 1,
         "relevance_criteria": "Must specify that dogs are welcome on the outdoor terrace but prohibited inside.",
         "passage_evaluator": lambda text: (
             ("dog" in text.lower() or "animal" in text.lower())
@@ -58,6 +61,7 @@ TEST_QUERIES = [
         "topic": "Plant-based food",
         "query": "Which food options are suitable for someone following a fully plant-based diet?",
         "expected_sources": ["allergens.txt", "menu_food.txt"],
+        "target_passages": 2,
         "relevance_criteria": "Must identify plant-based items like roasted vegetable sandwich or rice porridge without dairy.",
         "passage_evaluator": lambda text: (
             ("plant based" in text.lower() or "without animal products" in text.lower() or "roasted vegetable" in text.lower())
@@ -69,6 +73,7 @@ TEST_QUERIES = [
         "topic": "Working environment",
         "query": "Can I work on my laptop, and where can I find Wi-Fi and power sockets?",
         "expected_sources": ["faq.txt"],
+        "target_passages": 1,
         "relevance_criteria": "Must mention laptop policies, kettle-guest Wi-Fi, or outlet locations (window bench/bookshelf).",
         "passage_evaluator": lambda text: (
             ("laptop" in text.lower() or "stay and work" in text.lower() or "kettle-guest" in text.lower() or "socket" in text.lower())
@@ -80,6 +85,7 @@ TEST_QUERIES = [
         "topic": "Food allergies",
         "query": "Which menu items are suitable for someone avoiding wheat or gluten?",
         "expected_sources": ["allergens.txt"],
+        "target_passages": 1,
         "relevance_criteria": "Must note absence of gluten-free bread and identify porridge/soup as safe alternatives.",
         "passage_evaluator": lambda text: (
             ("gluten" in text.lower() or "without wheat" in text.lower())
@@ -91,6 +97,7 @@ TEST_QUERIES = [
         "topic": "Semantic search example",
         "query": "I want something warm to drink because it is freezing outside.",
         "expected_sources": ["menu_drinks.txt"],
+        "target_passages": 1,
         "relevance_criteria": "Must retrieve warm beverage options like Assam milk tea, chamomile, or drinking chocolate.",
         "passage_evaluator": lambda text: (
             ("drinking chocolate" in text.lower() or "assam" in text.lower() or "chamomile" in text.lower() or "steamed milk" in text.lower())
@@ -182,9 +189,17 @@ def calculate_metrics(
     results: List[Dict[str, Any]],
     expected_sources: List[str],
     passage_evaluator: Callable[[str], bool],
+    target_passages: int = 1,
 ) -> Dict[str, float]:
     """
-    Calculate both source-level and passage-level precision, recall, and reciprocal rank.
+    Calculate rigorous source-level and grounded passage-level precision, recall, and reciprocal rank.
+
+    Methodological criteria:
+    - Grounded Passage Precision: A passage is considered relevant IF AND ONLY IF its source document
+      is among the expected ground truth sources AND its content satisfies the passage relevance criteria.
+    - Passage Recall@K: Proportion of target ground truth answering passages retrieved in top-K.
+    - Source Coverage Recall: Proportion of expected ground truth sources containing at least one answering passage.
+    - Reciprocal Rank (MRR): Inverse rank of the first grounded, factually relevant passage.
     """
     if not results:
         return {
@@ -192,34 +207,38 @@ def calculate_metrics(
             "source_recall_at_k": 0.0,
             "passage_precision_at_k": 0.0,
             "passage_recall_at_k": 0.0,
+            "source_coverage_recall": 0.0,
             "reciprocal_rank": 0.0,
         }
 
     k = len(results)
 
-    # Source-level metrics (proxy based on file matching)
+    # 1. Source-level metrics (proxy based on file matching)
     source_hits = [item for item in results if item["source"] in expected_sources]
     source_precision = len(source_hits) / k
     retrieved_sources = set(item["source"] for item in source_hits)
     source_recall = len(retrieved_sources) / len(set(expected_sources))
 
-    # Passage-level metrics (actual factual answer presence in text)
-    passage_hits = [item for item in results if passage_evaluator(item["text"])]
-    passage_precision = len(passage_hits) / k
-    # Passage recall: fraction of expected sources that have at least one relevant passage
-    sources_with_relevant_passage = set(
-        item["source"] for item in passage_hits if item["source"] in expected_sources
-    )
-    passage_recall = (
-        len(sources_with_relevant_passage) / len(set(expected_sources))
-        if expected_sources
-        else (1.0 if passage_hits else 0.0)
-    )
+    # 2. Grounded Passage-level metrics:
+    # A passage is factually relevant ONLY if its source is valid AND passage content answers the query
+    grounded_relevant_passages = [
+        item for item in results
+        if item["source"] in expected_sources and passage_evaluator(item["text"])
+    ]
+    passage_precision = len(grounded_relevant_passages) / k
 
-    # Reciprocal rank based on first factually relevant passage
+    # Standard passage-level recall: fraction of target answering passages retrieved
+    target_count = target_passages if target_passages > 0 else len(expected_sources)
+    passage_recall = min(1.0, len(grounded_relevant_passages) / target_count)
+
+    # Source coverage recall: proportion of expected documents with at least one verified answering passage
+    sources_with_relevant_passage = set(item["source"] for item in grounded_relevant_passages)
+    source_coverage_recall = len(sources_with_relevant_passage) / len(set(expected_sources))
+
+    # Reciprocal rank based on first grounded relevant passage
     reciprocal_rank = 0.0
     for rank, item in enumerate(results, start=1):
-        if passage_evaluator(item["text"]):
+        if item["source"] in expected_sources and passage_evaluator(item["text"]):
             reciprocal_rank = 1.0 / rank
             break
 
@@ -228,6 +247,7 @@ def calculate_metrics(
         "source_recall_at_k": round(source_recall, 3),
         "passage_precision_at_k": round(passage_precision, 3),
         "passage_recall_at_k": round(passage_recall, 3),
+        "source_coverage_recall": round(source_coverage_recall, 3),
         "reciprocal_rank": round(reciprocal_rank, 3),
     }
 
@@ -278,7 +298,12 @@ def main() -> None:
             expected_sources = test["expected_sources"]
 
             results = retrieve(collection, query, TOP_K)
-            metrics = calculate_metrics(results, expected_sources, test["passage_evaluator"])
+            metrics = calculate_metrics(
+                results,
+                expected_sources,
+                test["passage_evaluator"],
+                target_passages=test.get("target_passages", 1),
+            )
 
             all_src_p.append(metrics["source_precision_at_k"])
             all_src_r.append(metrics["source_recall_at_k"])
